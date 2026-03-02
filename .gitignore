@@ -1,5 +1,5 @@
 # Project related temporary or test files
-test
+main_test
 
 # Editor, IDE, and coding tools
 *.vim
