@@ -1,0 +1,807 @@
+#include <stddef.h>
+#include <stdint.h>
+#include <math.h>
+
+/*---------------------------------------------------------------------------------------------------------------------------
+ *                                                 Define simpler types
+ *-------------------------------------------------------------------------------------------------------------------------*/
+
+#ifndef _TYPE_ALIASES_
+#define _TYPE_ALIASES_
+
+typedef int32_t     b32;
+#ifndef false
+   #define false 0
+   #define true  1
+#endif
+	
+#if !defined(_WINDOWS_) && !defined(_INC_WINDOWS)
+typedef char       byte;
+#endif
+
+typedef ptrdiff_t  size;
+typedef size_t    usize;
+
+typedef uintptr_t  uptr;
+typedef intptr_t   iptr;
+
+typedef float       f32;
+typedef double      f64;
+
+typedef uint8_t      u8;
+typedef uint16_t    u16;
+typedef uint32_t    u32;
+typedef uint64_t    u64;
+typedef int8_t       i8;
+typedef int16_t     i16;
+typedef int32_t     i32;
+typedef int64_t     i64;
+#endif
+
+/***************************************************************************************************************************
+ *                                             Error Reporting and Handling
+ **************************************************************************************************************************/
+typedef enum
+{
+    SONDE_ERROR_NONE = 0,              /* This is just a NaN with no embedded error information.                      */
+
+    /* Data Errors */
+    SONDE_ERROR_MISSING_DATA,          /* This represents missing data.                                               */
+    SONDE_ERROR_INVALID_INPUT,         /* An input value was invalid, such as infinity or NaN, or scientific error.   */
+
+    /* Algorithmic Errors */
+    SONDE_ERROR_TOO_MANY_ITERATIONS,   /* An iterative algorithm took too many iterations.                            */
+    SONDE_ERROR_OUT_OF_RANGE,          /* An input or output was out of the range of allowed values for an algorithm. */
+    SONDE_ERROR_NOT_ENOUGH_DATA,       /* Not enough data for the algorithm to work.                                  */
+
+    /* Misuse of the error system. */
+    SONDE_ERROR_NOT_AN_ERROR,          /* This isn't a NaN.                                                           */
+
+    SONDE_ERROR_NUMBER_OF_ERRORS       /* Not actually used for any errors, but potentially for compile time checks.  */
+} SondeError;
+
+f64 sonde_error_create_nan(SondeError err);
+SondeError sonde_error_extract(f64 val);
+b32 sonde_is_error(f64 val);
+char const *sonde_error_msg_from_code(SondeError err);
+char const *sonde_error_msg_from_value(f64 val);
+
+/***************************************************************************************************************************
+ *                                               Units of Measurement
+ **************************************************************************************************************************/
+/* Temperatures */
+typedef struct { f64 val; } SondeCelsius;
+typedef struct { f64 val; } SondeFahrenheit;
+typedef struct { f64 val; } SondeKelvin;
+
+/* Pressure */
+typedef struct { f64 val; } SondeHectopascal;
+typedef SondeHectopascal SondeMillibar;
+
+/* Specific Heat Capacity */
+typedef struct { f64 val; } SondeJpKgpK;      /* Joules / (kilogram * Kelvin)      */
+
+/* Distance */
+typedef struct { f64 val; } SondeMeter;
+typedef struct { f64 val; } SondeKilometer;
+typedef struct { f64 val; } SondeStatuteMile;
+typedef struct { f64 val; } SondeFeet;
+
+/* Speed, Veclocity*/
+typedef struct { f64 val; } SondeMps;         /* Meters per second                 */
+typedef struct { f64 val; } SondeKts;         /* Knots                             */
+typedef struct { f64 val; } SondeMph;         /* Miles per hour                    */
+typedef struct { f64 u; f64 v; } SondeUVMps;  /* U and V wind in meters per second */
+
+/* Power and specific energy */
+typedef struct { f64 val; } SondeGw;          /* Gigawatts                         */
+typedef struct { f64 val; } SondeJpKg;        /* Joules per kilogram               */
+
+/***************************************************************************************************************************
+ *                                                      Unit Conversions
+ **************************************************************************************************************************/
+
+/* Temperature Conversions */
+SondeKelvin     sonde_celsius_to_kelvin(SondeCelsius t)        { return (SondeKelvin)     { .val = t.val + 273.15 };      }
+SondeCelsius    sonde_kelvin_to_celsius(SondeKelvin t)         { return (SondeCelsius)    { .val = t.val - 273.15 };      }
+SondeCelsius    sonde_fahrenheit_to_celsius(SondeFahrenheit t) { return (SondeCelsius)    { .val = (t.val - 32.0) / 1.8}; }
+SondeFahrenheit sonde_celsius_to_fahrenheit(SondeCelsius t)    { return (SondeFahrenheit) { .val =  1.8 * t.val + 32.0};  }
+
+/* Distance Conversions */
+SondeMeter       sonde_kilometers_to_meters(SondeKilometer km) { return (SondeMeter)       { .val = km.val * 1000.0 };    }
+SondeMeter       sonde_miles_to_meters(SondeStatuteMile m)     { return (SondeMeter)       { .val = m.val / 1609.344 };   }
+SondeMeter       sonde_feet_to_meters(SondeFeet f)             { return (SondeMeter)       { .val = f.val * 0.3048 };     }
+SondeKilometer   sonde_meters_to_kilometers(SondeMeter m)      { return (SondeKilometer)   { .val = m.val * 0.001 };      }
+SondeKilometer   sonde_miles_to_kilometers(SondeStatuteMile m) { return (SondeKilometer)   { .val = m.val / 1.609344 };   }
+SondeKilometer   sonde_feet_to_kilometers(SondeFeet f)         { return (SondeKilometer)   { .val = f.val * 0.0003048 };  }
+SondeStatuteMile sonde_meters_to_miles(SondeMeter m)           { return (SondeStatuteMile) { .val = m.val * 1609.344 };   }
+SondeStatuteMile sonde_kilometers_to_miles(SondeKilometer km)  { return (SondeStatuteMile) { .val = km.val * 1.609344 };  }
+SondeStatuteMile sonde_feet_to_miles(SondeFeet f)              { return (SondeStatuteMile) { .val = f.val / 5280.0 };     }
+SondeFeet        sonde_meters_to_feet(SondeMeter m)            { return (SondeFeet)        { .val = m.val / 0.3048 };     }
+SondeFeet        sonde_kilometers_to_feet(SondeKilometer km)   { return (SondeFeet)        { .val = km.val / 0.0003048 }; }
+SondeFeet        sonde_miles_to_feet(SondeStatuteMile m)       { return (SondeFeet)        { .val = m.val * 5280.0 };     }
+
+/***************************************************************************************************************************
+ *                                Thermodynamic Constants Frequently Used in Meteorology
+ **************************************************************************************************************************/
+
+SondeJpKgpK const sonde_const_Rd  = { .val =  287.058 }; // The gas constant for dry air. (J / (K kg))
+SondeJpKgpK const sonde_const_Rv  = { .val =  461.5   }; // The gas constant for water vapor. (J / (K kg))
+SondeJpKgpK const sonde_const_cpd = { .val = 1005.7   }; // Specific heat capacity of dry air at constant pressure. (J / (K kg))
+SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; // Specific heat capacity of water vapor at fixed pressure. (J / (K kg))
+SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; // Specific heat capacity of liquid water. (J / (K kg))
+SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; // Specific heat capacity of dry air at constant volume. (J / (K kg))
+
+f64         const sonde_const_g   = -9.80665;            // Acceleration due to gravity at the Earth's surface. (m / s^2)
+f64         const sonde_const_epsilon = sonde_const_Rd.val / sonde_const_Rv.val; // Ratio of Rd / Rv. (no units)
+f64         const sonde_const_gamma = sonde_const_cpd.val / sonde_const_cvd.val; // Ratio of cp and cv. (unitless)
+
+/***************************************************************************************************************************
+ *                                                          Formulas
+ **************************************************************************************************************************/
+
+typedef struct
+{
+    SondeHectopascal p;                   /* Pressure in hectopascals */
+    SondeCelsius t;                       /* Temperature in Celsius   */
+} SondePressureTemperaturePair;
+
+/* Potential Temperature */
+SondeKelvin  sonde_potential_temperature(SondeHectopascal p, SondeCelsius t);
+SondeCelsius sonde_temperature_from_pot_temperature(SondeKelvin theta, SondeHectopascal p);
+
+/* Vapor Pressure of Water/Ice, Dew/Frost Point, Relative Humidity */
+SondeHectopascal sonde_vapor_pressure_water(SondeCelsius dp);
+SondeCelsius sonde_dew_point_from_vapor_pressure(SondeHectopascal vp);
+SondeHectopascal sonde_vapor_pressure_ice(SondeCelsius fp);
+SondeCelsius sonde_frost_point_from_vapor_pressure_over_ice(SondeHectopascal vp);
+f64 sonde_relative_humidity_liquid(SondeCelsius t, SondeCelsius dp);
+f64 sonde_relative_humidity_ice(SondeCelsius t, SondeCelsius fp);
+
+/* Mixing Ratio and Specific Humidity */
+f64 sonde_mixing_ratio(SondeCelsius dp, SondeHectopascal p);
+SondeCelsius sonde_dew_point_from_p_and_mw(SondeHectopascal p, f64 mw);
+f64 sonde_specific_humidity(SondeCelsius dp, SondeHectopascal p);
+SondeCelsius sonde_dew_point_from_p_and_spcecific_humidity(SondeHectopascal p, f64 specific_humidity);
+f64 sonde_mixing_ratio_from_specific_humidity(f64 specific_humidity);
+f64 sonde_specific_humidity_from_mixing_ratio(f64 mixing_ratio);
+
+/* Virtual Temperature */
+SondeCelsius sonde_virtual_temperature(SondeCelsius t, SondeCelsius dp, SondeHectopascal p);
+
+/* Latent Heat of Condensation / Evaporation. */
+SondeJpKgpK sonde_latent_heat_of_condensation_vaporization(SondeCelsius t);
+
+/* Equivalent Potential Temperature */
+SondeKelvin sonde_equivalent_potential_temperature(SondeCelsius t, SondeCelsius dp, SondeHectopascal p);
+SondeCelsius sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, SondeKelvin theta_e);
+
+/* Calculating the LCL */
+SondeHectopascal sonde_pressure_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p);
+SondePressureTemperaturePair sonde_pressure_and_temperature_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p);
+
+/* Web Bulb Temperature */
+SondeCelsius sonde_wet_bulb(SondeCelsius t, SondeCelsius dp, SondeHectopascal p);
+
+/* Fire Weather */
+SondeGw sonde_pft(
+    SondeMeter zfc,
+    SondeHectopascal p_fc,
+    SondeMps mean_wind,
+    SondeKelvin theta_diff,
+    SondeKelvin theta_fc,
+    SondeHectopascal p_sfc);
+
+/***************************************************************************************************************************
+ *                                                      Implementations
+ **************************************************************************************************************************/
+
+_Static_assert(SONDE_ERROR_NUMBER_OF_ERRORS < INT32_MAX, "Too many error types.");
+
+typedef union { f64 x; u64 i; } SondeErrorPun;
+
+f64 
+sonde_error_create_nan(SondeError err)
+{
+    SondeErrorPun ep = { .x = NAN };
+    ep.i |= (u64)(err & 0x7FFFFFFF);
+
+    return ep.x;
+}
+
+SondeError 
+sonde_error_extract(f64 val)
+{
+    if(!isnan(val)) { return SONDE_ERROR_NOT_AN_ERROR; }
+    SondeErrorPun ep = { .x = val };
+    return  (SondeError)(ep.i & 0x7FFFFFFF);
+}
+
+b32 
+sonde_is_error(f64 val)
+{
+    return isnan(val);
+}
+
+char const *
+sonde_error_msg_from_code(SondeError err)
+{
+    switch(err)
+    {
+        default:                              return "Unknown error code";
+        case SONDE_ERROR_NONE:                return "No error information in NaN";
+        case SONDE_ERROR_MISSING_DATA:        return "Missing data value";
+        case SONDE_ERROR_INVALID_INPUT:       return "Invalid input value";
+        case SONDE_ERROR_TOO_MANY_ITERATIONS: return "Too many iterations";
+        case SONDE_ERROR_OUT_OF_RANGE:        return "Value out of range";
+        case SONDE_ERROR_NOT_ENOUGH_DATA:     return "Not enough data";
+        case SONDE_ERROR_NOT_AN_ERROR:        return "Value was not an error";
+    }
+
+    return NULL;
+}
+
+char const *
+sonde_error_msg_from_value(f64 val)
+{
+    SondeError err = sonde_error_extract(val);
+    return sonde_error_msg_from_code(err);
+}
+
+typedef f64(*SondeRootFunc)(f64 x, f64 *params);
+
+/* Find the root of an equation given values bracketing a root. Used when finding wet bulb
+ * temperature among other functions.
+ *
+ * * `a` - The left bracket for the root.
+ * * `b` - The right bracket for the root.
+ */
+f64
+sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
+{
+    i32 const MAX_IT = 50;
+    f64 const EPS = 1.0e-9;
+
+    if(isnan(a)) { return a; }
+    if(isnan(b)) { return b; }
+
+    f64 fa = f(a, params);
+    f64 fb = f(b, params);
+
+    if(isnan(fa)) { return fa; }
+    if(isnan(fb)) { return fb; }
+
+    /* Check to make sure a root is bracketed by a and b */
+    if(fa * fb >= 0.0) { return sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT); }
+
+    /* Check if the left and right brackets are in the correct order and fix them if not. */
+    if(fabs(fa) < fabs(fb))
+    {
+        f64 tmp =  a;  a =  b; b  = tmp;
+            tmp = fa; fa = fb; fb = tmp;
+    }
+
+    f64 c = a;
+    f64 fc = fa;
+    f64 d;
+    b32 mflag = true;
+
+    for(i32 i = 0; i < MAX_IT; ++i)
+    {
+        f64 s;
+        if( fa != fc && fb != fc)
+        {
+            /* Try inverse quadratic for next step */
+            s = (a * fb * fc) / ((fa - fb) * (fa - fc)) + (b * fa * fc) / ((fb - fa) * (fb - fc)) + (c * fa * fb) / ((fc - fa) * (fc - fb));
+        } 
+        else
+        {
+            /* Try secant method for next step */
+            s = b - fb * (b - a) / (fb - fa);
+        };
+
+        /* Check to see if bisection would be a better idea */
+        b32 condition1;
+        if(a < b) { condition1 = s > b || s < (3.0 * a + b) / 4.0; }
+        else      { condition1 = s < b || s > (3.0 * a + b) / 4.0; }
+
+        b32 condition2 = mflag && fabs(s - b) >= fabs(b - c) / 2.0;
+        b32 condition3 = !mflag && fabs(s - b) >= fabs(c - d) / 2.0;
+        b32 condition4 = mflag && fabs(b - c) < EPS;
+        b32 condition5 = !mflag && fabs(c - d) < EPS;
+
+        if(condition1 || condition2 || condition3 || condition4 || condition5)
+        {
+            s = (a + b) / 2.0;
+            mflag = true;
+        }
+        else
+        {
+            mflag = false;
+        }
+
+        f64 fs = f(s, params); if(isnan(fs)) { return fs; }
+        d = c;
+        c = b;
+        fc = fb;
+
+        if(fa * fs < 0.0) { b = s; fb = fs; }
+        else              { a = s; fa = fs; }
+
+        if(fabs(fa) < fabs(fb))
+        {
+            f64 tmp =  a;  a =  b; b  = tmp;
+                tmp = fa; fa = fb; fb = tmp;
+        }
+
+        /* Check for convergence and return */
+        if(fb == 0.0 || fabs(b - a) < EPS) { return b; }
+    }
+
+    return sonde_error_create_nan(SONDE_ERROR_TOO_MANY_ITERATIONS);
+}
+
+
+SondeKelvin 
+sonde_potential_temperature(SondeHectopascal p, SondeCelsius t)
+{
+    SondeKelvin temp_k = sonde_celsius_to_kelvin(t);
+    return (SondeKelvin){ .val = temp_k.val * pow(1000.0 / p.val, sonde_const_Rd.val / sonde_const_cpd.val) };
+}
+
+SondeCelsius 
+sonde_temperature_from_pot_temperature(SondeKelvin theta, SondeHectopascal p)
+{
+    SondeKelvin t_k = { .val = theta.val * pow(p.val / 1000.0, sonde_const_Rd.val / sonde_const_cpd.val) };
+    return sonde_kelvin_to_celsius(t_k);
+}
+
+/* Constants used for the limits of applicability to the empirical relationships used for vapor pressure. */
+f64 const SONDE_MIN_T_VP_LIQUID_C = -80.0;
+f64 const SONDE_MAX_T_VP_LIQUID_C = 50.0;
+f64 const SONDE_MIN_T_VP_ICE_C    = -80.0;
+f64 const SONDE_MAX_T_VP_ICE_C    = 0.0;
+
+/* Get the vapor pressure over liquid water.
+ *
+ * Alduchov, O.A., and Eskridge, R.E. Improved Magnus` form approximation of saturation vapor
+ * pressure. United States: N. p., 1997. Web. doi:10.2172/548871.
+ *
+ * Returns: The vapor pressure of water vapor in hPa.
+ */
+SondeHectopascal 
+sonde_vapor_pressure_water(SondeCelsius dp)
+{
+    if(dp.val < SONDE_MIN_T_VP_LIQUID_C || dp.val > SONDE_MAX_T_VP_LIQUID_C)
+    {
+        return (SondeHectopascal){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; 
+    }
+
+    return (SondeHectopascal){ .val = 6.1037 * exp(17.641 * dp.val / (dp.val + 243.27)) };
+}
+
+/* Get the dew point given the vapor pressure of water over liquid water. This function is the
+ * inverse of `sonde_vapor_pressure_water`.
+ *
+ * Returns: The dew point in Celsius.
+ */
+SondeCelsius 
+sonde_dew_point_from_vapor_pressure(SondeHectopascal vp)
+{
+    f64 a = log(vp.val / 6.1037) / 17.641;
+    f64 dp_c = a * 243.27 / (1.0 - a);
+
+    if (dp_c < SONDE_MIN_T_VP_LIQUID_C || dp_c > SONDE_MAX_T_VP_LIQUID_C)
+    {
+        return (SondeCelsius){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+    }
+
+    return (SondeCelsius){ .val = dp_c };
+}
+
+/* Get the vapor pressure over ice.
+ *
+ * Alduchov, O.A., and Eskridge, R.E. Improved Magnus` form approximation of saturation vapor
+ * pressure. United States: N. p., 1997. Web. doi:10.2172/548871.
+ *
+ * Returns: The vapor pressure of water vapor over ice in hPa.
+ */
+SondeHectopascal 
+sonde_vapor_pressure_ice(SondeCelsius fp)
+{
+    if(fp.val < SONDE_MIN_T_VP_ICE_C || fp.val > SONDE_MAX_T_VP_ICE_C)
+    {
+        return (SondeHectopascal){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+    }
+    
+    return (SondeHectopascal){ .val = 6.1121 * exp(22.587 * fp.val / (fp.val + 273.86)) };
+}
+
+/* Get the frost point given the vapor pressure of water over ice. This function is the inverse of
+ * `sonde_vapor_pressure_ice`.
+ *
+ * Returns: The frost point in Celsius.
+ */
+SondeCelsius 
+sonde_frost_point_from_vapor_pressure_over_ice(SondeHectopascal vp)
+{
+    f64 a = log(vp.val / 6.1121) / 22.587;
+    f64 fp_c = a * 273.86 / (1.0 - a);
+
+    if (fp_c < SONDE_MIN_T_VP_ICE_C || fp_c > SONDE_MAX_T_VP_ICE_C)
+    {
+        return (SondeCelsius){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+    }
+
+    return (SondeCelsius){ .val = fp_c };
+}
+
+/* Calculate the relative humidity with respect to liquid water.
+ *
+ * Returns: The relative humidity as a decimal, i.e. 0.95 instead of 95%.
+ */
+f64 
+sonde_relative_humidity_liquid(SondeCelsius t, SondeCelsius dp)
+{
+    SondeHectopascal e = sonde_vapor_pressure_water(t);
+    SondeHectopascal es = sonde_vapor_pressure_water(dp);
+    return e.val / es.val;
+}
+
+/* Calculate the relative humidity with respect to ice.
+ *
+ * Returns: The relative humidity as a decimal, i.e. 0.95 instead of 95%.
+ */
+f64 
+sonde_relative_humidity_ice(SondeCelsius t, SondeCelsius fp)
+{
+    SondeHectopascal e = sonde_vapor_pressure_ice(t);
+    SondeHectopascal es = sonde_vapor_pressure_ice(fp);
+    return e.val / es.val;
+}
+
+/* Calculate the mixing ratio of water.
+ *
+ * Eq 5.9 from "Weather Analysis" by Dušan Dujrić
+ *
+ * Returns: The mixing ratio as a unitless value. Note this is often reported as g/kg, but this
+ *          function returns kg/kg or g/g.
+ */
+f64 
+sonde_mixing_ratio(SondeCelsius dp, SondeHectopascal p)
+{
+    SondeHectopascal vp = sonde_vapor_pressure_water(dp);
+    if(vp.val > p.val) { return sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT); }
+    return sonde_const_epsilon * vp.val / (p.val - vp.val);
+}
+
+/* Given a mixing ratio and pressure, calculate the dew point temperature. If saturation is
+ * assumed, this is also the temperature.
+ *
+ * Returns: The dew point in Celsius.
+ */
+SondeCelsius 
+sonde_dew_point_from_p_and_mw(SondeHectopascal p, f64 mw)
+{
+    SondeHectopascal vp = { .val = mw * p.val / (mw + sonde_const_epsilon) };
+    return sonde_dew_point_from_vapor_pressure(vp);
+}
+
+/* Calculate the specific humidity.
+ *
+ * Eqs 5.11 and 5.12 from from "Weather Analysis" by Dušan Dujrić 
+ *
+ * * `dp_c` - the dew point, if this is the same as the temperature then this
+ *            calculates the saturation specific humidity.
+ * * `pressure_hpa` - the pressure in hPa.
+ *
+ * Returns the specific humidity. (no units)
+ */
+f64 
+sonde_specific_humidity(SondeCelsius dp, SondeHectopascal p)
+{
+    SondeHectopascal vp = sonde_vapor_pressure_water(dp);
+    if(vp.val > p.val) { return sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT); }
+    return vp.val / p.val * sonde_const_epsilon;
+}
+
+/* Given a specific humidity and pressure, calculate the dew point temperature. If saturation is
+ * assumed, this is also the temperature.
+ */
+SondeCelsius 
+sonde_dew_point_from_p_and_spcecific_humidity(SondeHectopascal p, f64 specific_humidity)
+{
+    SondeHectopascal vp = { .val = specific_humidity * p.val / sonde_const_epsilon };
+    return sonde_dew_point_from_vapor_pressure(vp);
+}
+
+/* Convert specific humidity into mixing ratio. */
+f64
+sonde_mixing_ratio_from_specific_humidity(f64 specific_humidity)
+{
+    return specific_humidity / (1.0 - specific_humidity);
+}
+
+/* Convert mixing ratio into specific humidity. */
+f64
+sonde_specific_humidity_from_mixing_ratio(f64 mixing_ratio)
+{
+    return mixing_ratio / (1.0 + mixing_ratio);
+}
+
+/* Virtual temperature in Celsius.
+ *
+ * From the [Glossary of Meteorology].(http://glossary.ametsoc.org/wiki/Virtual_temperature)
+ *
+ * Returns the virtual temperature in Celsius.
+ */
+SondeCelsius 
+sonde_virtual_temperature(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
+{
+    f64 rv = sonde_mixing_ratio(dp, p);
+    SondeKelvin t_k = sonde_potential_temperature(p, t);
+    SondeKelvin vt = { .val = t_k.val * (1.0 + rv / sonde_const_epsilon) / (1.0 + rv) };
+    return sonde_temperature_from_pot_temperature(vt, p);
+}
+
+/* Latent heat of condensation / vaporization for water.
+ *
+ * Polynomial curve fit to Table 2.1. R. R. Rogers; M. K. Yau (1989). A Short Course in Cloud
+ * Physics (3rd ed.). Pergamon Press. p. 16. ISBN 0-7506-3215-1.
+ *
+ * Returns: the latent heat of condensation for water in J / kg.
+ */
+SondeJpKgpK 
+sonde_latent_heat_of_condensation_vaporization(SondeCelsius t)
+{
+    // The table has values from -40.0 to 40.0. So from -100.0 to -40.0 is actually an extrapolation.
+    // I graphed the values from the extrapolation, and the curve looks good, and is approaching the
+    // latent heat of sublimation, but does not exceed it. This seems very reasonable to me,
+    // especially considering that a common approximation is to just us a constant value.
+    if (t.val < -100.0 || t.val > 60.0)
+    {
+        return (SondeJpKgpK) { .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; 
+    }
+
+    //f64 val = (2500.8 - 2.36 * t.val + 0.0016 * t.val * t.val - 0.00006 * t.val * t.val * t.val) * 1000.0;
+    f64 val = (2500.8 + (-2.36 + (0.0016 - 0.00006 * t.val) * t.val) * t.val) * 1000.0;
+
+    return (SondeJpKgpK){ .val = val };
+}
+
+/* Calculate equivalent potential temperature.
+ *
+ * Equation from ["The Glossary of Meteorology"]
+ * (http://glossary.ametsoc.org/wiki/Equivalent_potential_temperature) online where the
+ * approximation of ignoring the "total water mixing ratio" is used since most of the time we do
+ * not have the necessary information to calculate that.
+ *
+ * * `temperature` - the initial temperature.
+ * * `dew_point` - the initial dew point.
+ * * `pressure` - the initial pressure.
+ *
+ * Returns: The equivalent potential temperature in Kelvin.
+ */
+SondeKelvin 
+sonde_equivalent_potential_temperature(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
+{
+    SondeKelvin t_k = sonde_celsius_to_kelvin(t);
+
+    f64 const P0 = 1000.0;  /* Reference pressure for potential temperatures in hPa. */
+    f64 rv = sonde_mixing_ratio(dp, p);
+    f64 pd = p.val - sonde_vapor_pressure_water(dp).val;
+
+    if(pd < 0.0) { return (SondeKelvin){ .val = sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT) }; }
+
+    f64 h = sonde_relative_humidity_liquid(t, dp);
+    SondeJpKgpK lv = sonde_latent_heat_of_condensation_vaporization(t);
+
+    f64 theta_e =
+        t_k.val
+        * powf(P0 / pd, sonde_const_Rd.val / sonde_const_cpd.val) 
+        * powf(h, -rv * (sonde_const_Rv.val / sonde_const_cpd.val))
+        * exp(lv.val * rv / sonde_const_cpd.val / t_k.val);
+
+    if(isinf(theta_e)) { return (SondeKelvin){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; }
+    return (SondeKelvin){ .val = theta_e };
+}
+
+f64
+sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_(f64 t_c, f64 *params)
+{
+    SondeCelsius t = { .val = t_c };
+    SondeHectopascal p = { .val = params[0] };
+    SondeKelvin theta_e = { .val = params[1] };
+    SondeKelvin theta_e_calc = sonde_equivalent_potential_temperature(t, t, p);
+    return theta_e_calc.val - theta_e.val;
+}
+
+/* Given the pressure and equivalent potential temperature, assume saturation and calculate the
+ * temperature.
+ *
+ * This function is useful if you were trying to calculate the temperature for plotting a
+ * moist adiabat on a skew-t log-p diagram.
+ *
+ * Returns: The temperature in Celsius.
+ */
+SondeCelsius 
+sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, SondeKelvin theta_e)
+{
+    f64 params[2] = {p.val, theta_e.val};
+
+    f64 max_t = sonde_dew_point_from_vapor_pressure(p).val;
+    max_t = isnan(max_t) ? SONDE_MAX_T_VP_LIQUID_C : max_t;
+
+    f64 t_c = sonde_find_root(
+            sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_,
+            SONDE_MIN_T_VP_LIQUID_C,
+            max_t,
+            params);
+
+    return (SondeCelsius){ .val = t_c };
+}
+
+f64
+sonde_pressure_hpa_at_lcl_inner_root_rough_(f64 press_hpa, f64 *params)
+{
+    SondeHectopascal p = { .val = press_hpa };
+    SondeKelvin theta = { .val = params[0] };
+    f64 mw = params[1];
+
+    f64 t_c = sonde_temperature_from_pot_temperature(theta, p).val;
+    f64 dp_c = sonde_dew_point_from_p_and_mw(p, mw).val;
+    return t_c - dp_c;
+}
+
+f64
+sonde_pressure_hpa_at_lcl_inner_root_accurate_(f64 press_hpa, f64 *params)
+{
+    SondeHectopascal p = { .val = press_hpa };
+    SondeKelvin theta = { .val = params[0] };
+    SondeKelvin theta_e = { .val = params[1] };
+
+    f64 t_c = sonde_temperature_from_pot_temperature(theta, p).val;
+    f64 dp_c = sonde_temperature_from_equiv_pot_temp_saturated_pressure(p, theta_e).val;
+    return t_c - dp_c;
+}
+
+/* Approximate pressure of the Lifting Condensation Level (LCL).
+ *
+ * * `t_c` - the initial temperature in Celsius.
+ * * `dp_c` - the initial dew point in Celsius.
+ * * `pres_hpa` - the initial pressure in hectopascals.
+ *
+ * Returns: The pressure at the LCL in hectopascal.
+ */
+SondeHectopascal 
+sonde_pressure_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
+{
+    if(dp.val >= t.val) { return p; }
+
+    f64 theta_k = sonde_potential_temperature(p, t).val;
+    f64 mw = sonde_mixing_ratio(dp, p);
+    f64 theta_e_k = sonde_equivalent_potential_temperature(t, dp, p).val;
+
+    /* Search between 1060 and 300 hPa. If it falls outside that range, give up! This is a 
+     * quick search using an approximation that is simple and should be very fast to compute.
+     */
+    f64 params[2] = {theta_k, mw};
+    f64 first_guess_hpa = sonde_find_root(sonde_pressure_hpa_at_lcl_inner_root_rough_, 300.0, 1060.0, params);
+
+    /* Now search for the pressure where the equivalent potential temperature and potential
+     * temperature of the parcel are equal, assuming saturation. This is more robust, but also
+     * more computationally expensive.
+     */
+    f64 const DELTA = 10.0;
+    params[1] = theta_e_k;
+    f64 lclp = sonde_find_root(
+            sonde_pressure_hpa_at_lcl_inner_root_accurate_,
+            first_guess_hpa - DELTA,
+            first_guess_hpa + DELTA,
+            params);
+    lclp = isnan(lclp) ? first_guess_hpa : lclp;
+
+    return (SondeHectopascal){ .val = lclp };
+}
+
+/* Calculate the temperature and pressure at the lifting condensation level (LCL).
+ *
+ * Eqs 5.17 and 5.18 from from "Weather Analysis" by Dušan Dujrić 
+ *
+ * * `t_c` - the initial temperature in Celsius.
+ * * `dp_c` - the initial dew point in Celsius.
+ * * `pres_hpa` - the initial pressure of the parcel in hectopascals.
+ *
+ * Returns: The pressure in hPa and the temperature in Celsius at the LCL.
+ */
+SondePressureTemperaturePair 
+sonde_pressure_and_temperature_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
+{
+    SondeHectopascal plcl = sonde_pressure_at_lcl(t, dp, p);
+    SondeCelsius tlcl = sonde_temperature_from_pot_temperature(sonde_potential_temperature(p, t), plcl);
+
+    return (SondePressureTemperaturePair){ .p = plcl, .t = tlcl };
+}
+
+f64
+sonde_wet_bulb_c_inner_root_(f64 t_c, f64 *parms)
+{
+    SondeCelsius t = { .val = t_c };
+    SondeHectopascal p = { .val = parms[0] };
+    SondeKelvin theta_e = { .val = parms[1] };
+
+    SondeKelvin theta_e_calc = sonde_equivalent_potential_temperature(t, t, p);
+    return theta_e_calc.val - theta_e.val;
+}
+
+/* Calculate the web bulb temperature.
+ *
+ * Returns: The wet bulb temperature in Celsius.
+ */
+SondeCelsius 
+sonde_wet_bulb(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
+{
+    SondePressureTemperaturePair tp = sonde_pressure_and_temperature_at_lcl(t, dp, p);
+    SondeHectopascal plcl = tp.p;
+    SondeCelsius tlcl = tp.t;
+
+    SondeKelvin theta_e = sonde_equivalent_potential_temperature(tlcl, tlcl, plcl);
+    f64 parms[2] = {p.val, theta_e.val};
+    f64 wet_bulb_c = sonde_find_root(sonde_wet_bulb_c_inner_root_, dp.val, t.val, parms);
+    return (SondeCelsius){ .val = wet_bulb_c };
+}
+
+/* Calculate the Pyrocumulonimbus Firepower Threshold (PFT).
+ *
+ * Output is in Gigawatts. The first reference below (Tory & Kepert, 2021) has most of the details
+ * about how to calculate the PFT, the other paper (Tory et. al, 2018) outlines the model in general.
+ *
+ * # References
+ *
+ * Tory, K. J., & Kepert, J. D. (2021). Pyrocumulonimbus Firepower Threshold: Assessing the
+ *     Atmospheric Potential for pyroCb, Weather and Forecasting, 36(2), 439-456. Retrieved Jun 2,
+ *     2021, from https://journals.ametsoc.org/view/journals/wefo/36/2/WAF-D-20-0027.1.xml
+ *
+ * Tory, K. J., Thurston, W., & Kepert, J. D. (2018). Thermodynamics of Pyrocumulus: A Conceptual
+ *     Study, Monthly Weather Review, 146(8), 2579-2598. Retrieved Jun 2, 2021, from
+ *     https://journals.ametsoc.org/view/journals/mwre/146/8/mwr-d-17-0377.1.xml
+ *
+ * # Arguments
+ *  - z_fc is the height above ground of the level of free convection. Equation 25, Tory & Kepert
+ *    (2021).
+ *  - p_fc is the pressure at z_fc. Equation 28, Tory & Kepert (2021).
+ *  - mean_wind is the magnitude of the mean velocity (vector average). Equation 25, Tory & Kepert
+ *    (2021).
+ *  - theta_diff is the difference between the mixed layer potential temperature and the parcel
+ *    potential temperature at the level of free convection. Equation 25, Tory & Kepert (2021).
+ *  - theta_fc is the potential temperature at the level of free convection. Equation 26, Tory &
+ *    Kepert (2021).
+ *  - p_sfc is the surface pressure. Equation 28, Tory & Kepert (2021).
+ */
+SondeGw 
+sonde_pft(SondeMeter zfc,
+    SondeHectopascal p_fc,
+    SondeMps mean_wind,
+    SondeKelvin theta_diff,
+    SondeKelvin theta_fc,
+    SondeHectopascal p_sfc)
+{
+    f64 z_fc_km = sonde_meters_to_kilometers(zfc).val;
+
+    /* Constant component of equation 25, from table 2 in Tory & Kepert (2021).      */
+    f64 const PFT_CONST = 397.3;                                  /* J / (kg K)      */
+
+    /* Equation 28                                                                   */
+    f64 p_c = p_sfc.val - (p_sfc.val - p_fc.val) / (1.0 + 0.32 * 0.4);
+
+    /* Equation 26 - multiply by 100 to convert hPa to Pa, so density is in kg / m^3 */
+    f64 density =
+        (100.0 * p_c) / (sonde_const_Rd.val * theta_fc.val) * pow(1000.0 / p_c, sonde_const_Rd.val / sonde_const_cpd.val);
+
+    /* Divide by 1000.0 to get Gigawatts. Since the heights z_fc are in km and squared, we've
+     * already 'divided' by 10^6.
+     */
+    return (SondeGw){ .val = PFT_CONST * density * z_fc_km * z_fc_km * mean_wind.val * theta_diff.val / 1000.0 };
+}
+
+
