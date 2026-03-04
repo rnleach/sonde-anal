@@ -132,9 +132,9 @@ SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; // Specific heat capaci
 SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; // Specific heat capacity of liquid water. (J / (K kg))
 SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; // Specific heat capacity of dry air at constant volume. (J / (K kg))
 
-f64         const sonde_const_g   = -9.80665;            // Acceleration due to gravity at the Earth's surface. (m / s^2)
-f64         const sonde_const_epsilon = sonde_const_Rd.val / sonde_const_Rv.val; // Ratio of Rd / Rv. (no units)
-f64         const sonde_const_gamma = sonde_const_cpd.val / sonde_const_cvd.val; // Ratio of cp and cv. (unitless)
+f64 const sonde_const_g   = -9.80665;                    // Acceleration due to gravity at the Earth's surface. (m / s^2)
+f64 const sonde_const_epsilon = 0.6220108342361863;      // Ratio of Rd / Rv. (no units)
+f64 const sonde_const_gamma = 1.4006963788300837;        // Ratio of cp and cv. (unitless)
 
 /***************************************************************************************************************************
  *                                                          Formulas
@@ -598,8 +598,8 @@ sonde_equivalent_potential_temperature(SondeCelsius t, SondeCelsius dp, SondeHec
 
     f64 theta_e =
         t_k.val
-        * powf(P0 / pd, sonde_const_Rd.val / sonde_const_cpd.val) 
-        * powf(h, -rv * (sonde_const_Rv.val / sonde_const_cpd.val))
+        * pow(P0 / pd, sonde_const_Rd.val / sonde_const_cpd.val) 
+        * pow(h, -rv * (sonde_const_Rv.val / sonde_const_cpd.val))
         * exp(lv.val * rv / sonde_const_cpd.val / t_k.val);
 
     if(isinf(theta_e)) { return (SondeKelvin){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; }
