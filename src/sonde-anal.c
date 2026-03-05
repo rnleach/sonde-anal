@@ -125,19 +125,19 @@ SondeFeet        sonde_miles_to_feet(SondeStatuteMile m)       { return (SondeFe
  *                                Thermodynamic Constants Frequently Used in Meteorology
  **************************************************************************************************************************/
 
-SondeJpKgpK const sonde_const_Rd  = { .val =  287.058 }; // The gas constant for dry air. (J / (K kg))
-SondeJpKgpK const sonde_const_Rv  = { .val =  461.5   }; // The gas constant for water vapor. (J / (K kg))
-SondeJpKgpK const sonde_const_cpd = { .val = 1005.7   }; // Specific heat capacity of dry air at constant pressure. (J / (K kg))
-SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; // Specific heat capacity of water vapor at fixed pressure. (J / (K kg))
-SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; // Specific heat capacity of liquid water. (J / (K kg))
-SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; // Specific heat capacity of dry air at constant volume. (J / (K kg))
+SondeJpKgpK const sonde_const_Rd  = { .val =  287.058 }; /* The gas constant for dry air. (J / (K kg))                            */
+SondeJpKgpK const sonde_const_Rv  = { .val =  461.5   }; /* The gas constant for water vapor. (J / (K kg))                        */
+SondeJpKgpK const sonde_const_cpd = { .val = 1005.7   }; /* Specific heat capacity of dry air at constant pressure. (J / (K kg))  */
+SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; /* Specific heat capacity of water vapor at fixed pressure. (J / (K kg)) */
+SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; /* Specific heat capacity of liquid water. (J / (K kg))                  */
+SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; /* Specific heat capacity of dry air at constant volume. (J / (K kg))    */
 
-f64 const sonde_const_g   = -9.80665;                    // Acceleration due to gravity at the Earth's surface. (m / s^2)
-f64 const sonde_const_epsilon = 0.6220108342361863;      // Ratio of Rd / Rv. (no units)
-f64 const sonde_const_gamma = 1.4006963788300837;        // Ratio of cp and cv. (unitless)
+f64 const sonde_const_g   = -9.80665;                    /* Acceleration due to gravity at the Earth's surface. (m / s^2)         */
+f64 const sonde_const_epsilon = 0.6220108342361863;      /* Ratio of Rd and Rv. (no units)                                        */
+f64 const sonde_const_gamma = 1.4006963788300837;        /* Ratio of cp and cv. (unitless)                                        */
 
 /***************************************************************************************************************************
- *                                                          Formulas
+ *                                                  Thermodynamic Formulas
  **************************************************************************************************************************/
 
 typedef struct
@@ -156,6 +156,7 @@ SondeCelsius sonde_dew_point_from_vapor_pressure(SondeHectopascal vp);
 SondeHectopascal sonde_vapor_pressure_ice(SondeCelsius fp);
 SondeCelsius sonde_frost_point_from_vapor_pressure_over_ice(SondeHectopascal vp);
 f64 sonde_relative_humidity_liquid(SondeCelsius t, SondeCelsius dp);
+SondeCelsius sonde_dew_point_from_temperature_and_humidity_liquid(SondeCelsius t, f64 rh);
 f64 sonde_relative_humidity_ice(SondeCelsius t, SondeCelsius fp);
 
 /* Mixing Ratio and Specific Humidity */
@@ -443,9 +444,24 @@ sonde_frost_point_from_vapor_pressure_over_ice(SondeHectopascal vp)
 f64 
 sonde_relative_humidity_liquid(SondeCelsius t, SondeCelsius dp)
 {
-    SondeHectopascal e = sonde_vapor_pressure_water(t);
-    SondeHectopascal es = sonde_vapor_pressure_water(dp);
+    SondeHectopascal es = sonde_vapor_pressure_water(t);
+    SondeHectopascal e = sonde_vapor_pressure_water(dp);
     return e.val / es.val;
+}
+
+/* Calculate the dew point with respect to liquid water.
+ *
+ * Assumes rh is relative to liquid water and not ice. rh is also in decimal form and not a 
+ * percent (i.e. 0.93 and not 93.0).
+ *
+ * Returns: The dew point in Celsius.
+ */
+SondeCelsius 
+sonde_dew_point_from_temperature_and_humidity_liquid(SondeCelsius t, f64 rh)
+{
+    SondeHectopascal es = sonde_vapor_pressure_water(t);
+    SondeHectopascal e = (SondeHectopascal){ .val = es.val * rh };
+    return sonde_dew_point_from_vapor_pressure(e);
 }
 
 /* Calculate the relative humidity with respect to ice.
@@ -630,7 +646,7 @@ sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, Son
     f64 params[2] = {p.val, theta_e.val};
 
     f64 max_t = sonde_dew_point_from_vapor_pressure(p).val;
-    max_t = isnan(max_t) ? SONDE_MAX_T_VP_LIQUID_C : max_t;
+    if(isnan(max_t)) { return (SondeCelsius){ .val = max_t }; }
 
     f64 t_c = sonde_find_root(
             sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_,
