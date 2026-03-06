@@ -125,16 +125,16 @@ SondeFeet        sonde_miles_to_feet(SondeStatuteMile m)       { return (SondeFe
  *                                Thermodynamic Constants Frequently Used in Meteorology
  **************************************************************************************************************************/
 
-SondeJpKgpK const sonde_const_Rd  = { .val =  287.058 }; /* The gas constant for dry air. (J / (K kg))                            */
-SondeJpKgpK const sonde_const_Rv  = { .val =  461.5   }; /* The gas constant for water vapor. (J / (K kg))                        */
-SondeJpKgpK const sonde_const_cpd = { .val = 1005.7   }; /* Specific heat capacity of dry air at constant pressure. (J / (K kg))  */
-SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; /* Specific heat capacity of water vapor at fixed pressure. (J / (K kg)) */
-SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; /* Specific heat capacity of liquid water. (J / (K kg))                  */
-SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; /* Specific heat capacity of dry air at constant volume. (J / (K kg))    */
+SondeJpKgpK const sonde_const_Rd  = { .val =  287.058 }; /* The gas constant for dry air. (J / (K kg))                    */
+SondeJpKgpK const sonde_const_Rv  = { .val =  461.5   }; /* The gas constant for water vapor. (J / (K kg))                */
+SondeJpKgpK const sonde_const_cpd = { .val = 1005.7   }; /* Heat capacity of dry air at constant pressure. (J / (K kg))   */
+SondeJpKgpK const sonde_const_cpv = { .val = 1870.0   }; /* Heat capacity of water vapor at fixed pressure. (J / (K kg))  */
+SondeJpKgpK const sonde_const_cl  = { .val = 4190.0   }; /* Heat capacity of liquid water. (J / (K kg))                   */
+SondeJpKgpK const sonde_const_cvd = { .val =  718.0   }; /* Heat capacity of dry air at constant volume. (J / (K kg))     */
 
-f64 const sonde_const_g   = -9.80665;                    /* Acceleration due to gravity at the Earth's surface. (m / s^2)         */
-f64 const sonde_const_epsilon = 0.6220108342361863;      /* Ratio of Rd and Rv. (no units)                                        */
-f64 const sonde_const_gamma = 1.4006963788300837;        /* Ratio of cp and cv. (unitless)                                        */
+f64 const sonde_const_g   = -9.80665;                    /* Acceleration due to gravity at the Earth's surface. (m / s^2) */
+f64 const sonde_const_epsilon = 0.6220108342361863;      /* Ratio of Rd and Rv. (no units)                                */
+f64 const sonde_const_gamma = 1.4006963788300837;        /* Ratio of cp and cv. (unitless)                                */
 
 /***************************************************************************************************************************
  *                                                  Thermodynamic Formulas
@@ -142,15 +142,15 @@ f64 const sonde_const_gamma = 1.4006963788300837;        /* Ratio of cp and cv. 
 
 typedef struct
 {
-    SondeHectopascal p;                   /* Pressure in hectopascals */
-    SondeCelsius t;                       /* Temperature in Celsius   */
+    SondeHectopascal p;         /* Pressure in hectopascals */
+    SondeCelsius t;             /* Temperature in Celsius   */
 } SondePressureTemperaturePair;
 
 /* Potential Temperature */
 SondeKelvin  sonde_potential_temperature(SondeHectopascal p, SondeCelsius t);
 SondeCelsius sonde_temperature_from_pot_temperature(SondeKelvin theta, SondeHectopascal p);
 
-/* Vapor Pressure of Water/Ice, Dew/Frost Point, Relative Humidity */
+/* Vapor Pressure of Water / Ice, Dew / Frost Point, Relative Humidity */
 SondeHectopascal sonde_vapor_pressure_water(SondeCelsius dp);
 SondeCelsius sonde_dew_point_from_vapor_pressure(SondeHectopascal vp);
 SondeHectopascal sonde_vapor_pressure_ice(SondeCelsius fp);
@@ -187,7 +187,7 @@ SondeCelsius sonde_wet_bulb(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
 /* Fire Weather */
 SondeGw sonde_pft(
     SondeMeter zfc,
-    SondeHectopascal p_fc,
+    SondeHectopascal pfc,
     SondeMps mean_wind,
     SondeKelvin theta_diff,
     SondeKelvin theta_fc,
@@ -254,8 +254,11 @@ typedef f64(*SondeRootFunc)(f64 x, f64 *params);
 /* Find the root of an equation given values bracketing a root. Used when finding wet bulb
  * temperature among other functions.
  *
- * * `a` - The left bracket for the root.
- * * `b` - The right bracket for the root.
+ * `f` - The function that you need to find the root for.
+ * `a` - The left bracket for the root.
+ * `b` - The right bracket for the root.
+ * `params` - constants or other values that `f` needs to be evaluated, but that WILL NOT change
+ *            during the root finding process. 
  */
 f64
 sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
@@ -451,7 +454,7 @@ sonde_relative_humidity_liquid(SondeCelsius t, SondeCelsius dp)
 
 /* Calculate the dew point with respect to liquid water.
  *
- * Assumes rh is relative to liquid water and not ice. rh is also in decimal form and not a 
+ * Assumes rh for liquid water and not ice. rh is also in decimal form and not a 
  * percent (i.e. 0.93 and not 93.0).
  *
  * Returns: The dew point in Celsius.
@@ -507,9 +510,8 @@ sonde_dew_point_from_p_and_mw(SondeHectopascal p, f64 mw)
  *
  * Eqs 5.11 and 5.12 from from "Weather Analysis" by Dušan Dujrić 
  *
- * * `dp_c` - the dew point, if this is the same as the temperature then this
- *            calculates the saturation specific humidity.
- * * `pressure_hpa` - the pressure in hPa.
+ * `dp` - the dew point, if this is the same as the temperature then this calculates the saturation specific humidity.
+ * `p` - the pressure in hPa.
  *
  * Returns the specific humidity. (no units)
  */
@@ -570,16 +572,17 @@ sonde_virtual_temperature(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
 SondeJpKgpK 
 sonde_latent_heat_of_condensation_vaporization(SondeCelsius t)
 {
-    // The table has values from -40.0 to 40.0. So from -100.0 to -40.0 is actually an extrapolation.
-    // I graphed the values from the extrapolation, and the curve looks good, and is approaching the
-    // latent heat of sublimation, but does not exceed it. This seems very reasonable to me,
-    // especially considering that a common approximation is to just us a constant value.
+    /* The table has values from -40.0 to 40.0. So from -100.0 to -40.0 is actually an extrapolation.
+     * I graphed the values from the extrapolation, and the curve looks good, and is approaching the
+     * latent heat of sublimation, but does not exceed it. This seems very reasonable to me,
+     * especially considering that a common approximation is to just us a constant value.
+     */
     if (t.val < -100.0 || t.val > 60.0)
     {
         return (SondeJpKgpK) { .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; 
     }
 
-    //f64 val = (2500.8 - 2.36 * t.val + 0.0016 * t.val * t.val - 0.00006 * t.val * t.val * t.val) * 1000.0;
+    /*f64 val = (2500.8 - 2.36 * t.val + 0.0016 * t.val * t.val - 0.00006 * t.val * t.val * t.val) * 1000.0; */
     f64 val = (2500.8 + (-2.36 + (0.0016 - 0.00006 * t.val) * t.val) * t.val) * 1000.0;
 
     return (SondeJpKgpK){ .val = val };
@@ -592,9 +595,9 @@ sonde_latent_heat_of_condensation_vaporization(SondeCelsius t)
  * approximation of ignoring the "total water mixing ratio" is used since most of the time we do
  * not have the necessary information to calculate that.
  *
- * * `temperature` - the initial temperature.
- * * `dew_point` - the initial dew point.
- * * `pressure` - the initial pressure.
+ * `t` - the initial temperature.
+ * `dp` - the initial dew point.
+ * `p` - the initial pressure.
  *
  * Returns: The equivalent potential temperature in Kelvin.
  */
@@ -683,11 +686,11 @@ sonde_pressure_hpa_at_lcl_inner_root_accurate_(f64 press_hpa, f64 *params)
 
 /* Approximate pressure of the Lifting Condensation Level (LCL).
  *
- * * `t_c` - the initial temperature in Celsius.
- * * `dp_c` - the initial dew point in Celsius.
- * * `pres_hpa` - the initial pressure in hectopascals.
+ * `t` - the initial temperature in Celsius.
+ * `dp` - the initial dew point in Celsius.
+ * `p` - the initial pressure in hectopascals.
  *
- * Returns: The pressure at the LCL in hectopascal.
+ * Returns: The pressure at the LCL in hPa.
  */
 SondeHectopascal 
 sonde_pressure_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
@@ -724,9 +727,9 @@ sonde_pressure_at_lcl(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
  *
  * Eqs 5.17 and 5.18 from from "Weather Analysis" by Dušan Dujrić 
  *
- * * `t_c` - the initial temperature in Celsius.
- * * `dp_c` - the initial dew point in Celsius.
- * * `pres_hpa` - the initial pressure of the parcel in hectopascals.
+ * `t` - the initial temperature in Celsius.
+ * `dp` - the initial dew point in Celsius.
+ * `p` - the initial pressure of the parcel in hPa.
  *
  * Returns: The pressure in hPa and the temperature in Celsius at the LCL.
  */
@@ -783,20 +786,17 @@ sonde_wet_bulb(SondeCelsius t, SondeCelsius dp, SondeHectopascal p)
  *     https://journals.ametsoc.org/view/journals/mwre/146/8/mwr-d-17-0377.1.xml
  *
  * # Arguments
- *  - z_fc is the height above ground of the level of free convection. Equation 25, Tory & Kepert
- *    (2021).
- *  - p_fc is the pressure at z_fc. Equation 28, Tory & Kepert (2021).
- *  - mean_wind is the magnitude of the mean velocity (vector average). Equation 25, Tory & Kepert
- *    (2021).
+ *  - zfc is the height above ground of the level of free convection. Equation 25, Tory & Kepert (2021).
+ *  - pfc is the pressure at zfc. Equation 28, Tory & Kepert (2021).
+ *  - mean_wind is the magnitude of the mean velocity (vector average). Equation 25, Tory & Kepert (2021).
  *  - theta_diff is the difference between the mixed layer potential temperature and the parcel
  *    potential temperature at the level of free convection. Equation 25, Tory & Kepert (2021).
- *  - theta_fc is the potential temperature at the level of free convection. Equation 26, Tory &
- *    Kepert (2021).
+ *  - theta_fc is the potential temperature at the level of free convection. Equation 26, Tory & Kepert (2021).
  *  - p_sfc is the surface pressure. Equation 28, Tory & Kepert (2021).
  */
 SondeGw 
 sonde_pft(SondeMeter zfc,
-    SondeHectopascal p_fc,
+    SondeHectopascal pfc,
     SondeMps mean_wind,
     SondeKelvin theta_diff,
     SondeKelvin theta_fc,
@@ -808,7 +808,7 @@ sonde_pft(SondeMeter zfc,
     f64 const PFT_CONST = 397.3;                                  /* J / (kg K)      */
 
     /* Equation 28                                                                   */
-    f64 p_c = p_sfc.val - (p_sfc.val - p_fc.val) / (1.0 + 0.32 * 0.4);
+    f64 p_c = p_sfc.val - (p_sfc.val - pfc.val) / (1.0 + 0.32 * 0.4);
 
     /* Equation 26 - multiply by 100 to convert hPa to Pa, so density is in kg / m^3 */
     f64 density =
@@ -819,5 +819,4 @@ sonde_pft(SondeMeter zfc,
      */
     return (SondeGw){ .val = PFT_CONST * density * z_fc_km * z_fc_km * mean_wind.val * theta_diff.val / 1000.0 };
 }
-
 
