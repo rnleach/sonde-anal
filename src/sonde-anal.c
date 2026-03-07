@@ -2,41 +2,10 @@
 #include <stdint.h>
 #include <math.h>
 
-/*---------------------------------------------------------------------------------------------------------------------------
- *                                                 Define simpler types
- *-------------------------------------------------------------------------------------------------------------------------*/
-
-#ifndef _TYPE_ALIASES_
-#define _TYPE_ALIASES_
-
-typedef int32_t     b32;
-#ifndef false
-   #define false 0
-   #define true  1
-#endif
-	
-#if !defined(_WINDOWS_) && !defined(_INC_WINDOWS)
-typedef char       byte;
-#endif
-
-typedef ptrdiff_t  size;
-typedef size_t    usize;
-
-typedef uintptr_t  uptr;
-typedef intptr_t   iptr;
-
-typedef float       f32;
-typedef double      f64;
-
-typedef uint8_t      u8;
-typedef uint16_t    u16;
-typedef uint32_t    u32;
-typedef uint64_t    u64;
-typedef int8_t       i8;
-typedef int16_t     i16;
-typedef int32_t     i32;
-typedef int64_t     i64;
-#endif
+#include "elk.h"
+#include "magpie.h"
+#include "coyote.h"
+#include "packrat.h"
 
 /***************************************************************************************************************************
  *                                             Error Reporting and Handling
@@ -79,47 +48,68 @@ typedef struct { f64 val; } SondeHectopascal;
 typedef SondeHectopascal SondeMillibar;
 
 /* Specific Heat Capacity */
-typedef struct { f64 val; } SondeJpKgpK;      /* Joules / (kilogram * Kelvin)      */
+typedef struct { f64 val; } SondeJpKgpK;                /* Joules / (kilogram * Kelvin)      */
 
-/* Distance */
-typedef struct { f64 val; } SondeMeter;
+/* Distance, Length */
 typedef struct { f64 val; } SondeKilometer;
+typedef struct { f64 val; } SondeMeter;
+typedef struct { f64 val; } SondeCentimeters;
+typedef struct { f64 val; } SondeMillimeters;
 typedef struct { f64 val; } SondeStatuteMile;
 typedef struct { f64 val; } SondeFeet;
+typedef struct { f64 val; } SondeInches;
 
 /* Speed, Veclocity*/
-typedef struct { f64 val; } SondeMps;         /* Meters per second                 */
-typedef struct { f64 val; } SondeKts;         /* Knots                             */
-typedef struct { f64 val; } SondeMph;         /* Miles per hour                    */
-typedef struct { f64 u; f64 v; } SondeUVMps;  /* U and V wind in meters per second */
+typedef struct { f64 val; } SondeMps;                   /* Meters per second                 */
+typedef struct { f64 val; } SondeKts;                   /* Knots                             */
+typedef struct { f64 val; } SondeMph;                   /* Miles per hour                    */
+typedef struct { f64 val; } SondeHectopascalPerSecond;  /* Pressure vertical velocity        */
+typedef struct { f64 u; f64 v; } SondeUVMps;            /* U and V wind in meters per second */
+typedef struct { f64 spd; f64 dir; } SondeSpdDirKts;    /* Speed and direction in knots      */
 
 /* Power and specific energy */
-typedef struct { f64 val; } SondeGw;          /* Gigawatts                         */
-typedef struct { f64 val; } SondeJpKg;        /* Joules per kilogram               */
+typedef struct { f64 val; } SondeGw;                    /* Gigawatts                         */
+typedef struct { f64 val; } SondeJpKg;                  /* Joules per kilogram               */
 
 /***************************************************************************************************************************
  *                                                      Unit Conversions
  **************************************************************************************************************************/
 
 /* Temperature Conversions */
-SondeKelvin     sonde_celsius_to_kelvin(SondeCelsius t)        { return (SondeKelvin)     { .val = t.val + 273.15 };      }
-SondeCelsius    sonde_kelvin_to_celsius(SondeKelvin t)         { return (SondeCelsius)    { .val = t.val - 273.15 };      }
-SondeCelsius    sonde_fahrenheit_to_celsius(SondeFahrenheit t) { return (SondeCelsius)    { .val = (t.val - 32.0) / 1.8}; }
-SondeFahrenheit sonde_celsius_to_fahrenheit(SondeCelsius t)    { return (SondeFahrenheit) { .val =  1.8 * t.val + 32.0};  }
+SondeKelvin     sonde_celsius_to_kelvin(SondeCelsius t)        { return (SondeKelvin)     { .val = t.val + 273.15 };       }
+SondeCelsius    sonde_kelvin_to_celsius(SondeKelvin t)         { return (SondeCelsius)    { .val = t.val - 273.15 };       }
+SondeCelsius    sonde_fahrenheit_to_celsius(SondeFahrenheit t) { return (SondeCelsius)    { .val = (t.val - 32.0) / 1.8};  }
+SondeFahrenheit sonde_celsius_to_fahrenheit(SondeCelsius t)    { return (SondeFahrenheit) { .val =  1.8 * t.val + 32.0};   }
 
 /* Distance Conversions */
-SondeMeter       sonde_kilometers_to_meters(SondeKilometer km) { return (SondeMeter)       { .val = km.val * 1000.0 };    }
-SondeMeter       sonde_miles_to_meters(SondeStatuteMile m)     { return (SondeMeter)       { .val = m.val / 1609.344 };   }
-SondeMeter       sonde_feet_to_meters(SondeFeet f)             { return (SondeMeter)       { .val = f.val * 0.3048 };     }
-SondeKilometer   sonde_meters_to_kilometers(SondeMeter m)      { return (SondeKilometer)   { .val = m.val * 0.001 };      }
-SondeKilometer   sonde_miles_to_kilometers(SondeStatuteMile m) { return (SondeKilometer)   { .val = m.val / 1.609344 };   }
-SondeKilometer   sonde_feet_to_kilometers(SondeFeet f)         { return (SondeKilometer)   { .val = f.val * 0.0003048 };  }
-SondeStatuteMile sonde_meters_to_miles(SondeMeter m)           { return (SondeStatuteMile) { .val = m.val * 1609.344 };   }
-SondeStatuteMile sonde_kilometers_to_miles(SondeKilometer km)  { return (SondeStatuteMile) { .val = km.val * 1.609344 };  }
-SondeStatuteMile sonde_feet_to_miles(SondeFeet f)              { return (SondeStatuteMile) { .val = f.val / 5280.0 };     }
-SondeFeet        sonde_meters_to_feet(SondeMeter m)            { return (SondeFeet)        { .val = m.val / 0.3048 };     }
-SondeFeet        sonde_kilometers_to_feet(SondeKilometer km)   { return (SondeFeet)        { .val = km.val / 0.0003048 }; }
-SondeFeet        sonde_miles_to_feet(SondeStatuteMile m)       { return (SondeFeet)        { .val = m.val * 5280.0 };     }
+SondeKilometer   sonde_miles_to_kilometers(SondeStatuteMile m) { return (SondeKilometer)   { .val = m.val / 1.609344 };    }
+SondeKilometer   sonde_meters_to_kilometers(SondeMeter m)      { return (SondeKilometer)   { .val = m.val * 0.001 };       }
+SondeKilometer   sonde_feet_to_kilometers(SondeFeet f)         { return (SondeKilometer)   { .val = f.val * 0.0003048 };   }
+
+SondeMeter       sonde_miles_to_meters(SondeStatuteMile m)     { return (SondeMeter)       { .val = m.val / 1609.344 };    }
+SondeMeter       sonde_kilometers_to_meters(SondeKilometer km) { return (SondeMeter)       { .val = km.val * 1000.0 };     }
+SondeMeter       sonde_feet_to_meters(SondeFeet f)             { return (SondeMeter)       { .val = f.val * 0.3048 };      }
+
+SondeCentimeters sonde_inches_to_centimeters(SondeInches in)   { return (SondeCentimeters) { .val = in.val * 2.54 };       }
+SondeCentimeters sonde_millimeters_to_centimeters(SondeMillimeters mm){ return (SondeCentimeters) { .val = mm.val / 10.0}; }
+
+SondeMillimeters sonde_inches_to_millimeters(SondeInches in)   { return (SondeMillimeters) { .val = in.val * 25.4 };       }
+SondeMillimeters sonde_centimeters_to_millimeters(SondeCentimeters cm){ return (SondeMillimeters) { .val = cm.val * 10.0}; }
+
+SondeStatuteMile sonde_kilometers_to_miles(SondeKilometer km)  { return (SondeStatuteMile) { .val = km.val * 1.609344 };   }
+SondeStatuteMile sonde_meters_to_miles(SondeMeter m)           { return (SondeStatuteMile) { .val = m.val * 1609.344 };    }
+SondeStatuteMile sonde_feet_to_miles(SondeFeet f)              { return (SondeStatuteMile) { .val = f.val / 5280.0 };      }
+
+SondeFeet        sonde_miles_to_feet(SondeStatuteMile m)       { return (SondeFeet)        { .val = m.val * 5280.0 };      }
+SondeFeet        sonde_kilometers_to_feet(SondeKilometer km)   { return (SondeFeet)        { .val = km.val / 0.0003048 };  }
+SondeFeet        sonde_meters_to_feet(SondeMeter m)            { return (SondeFeet)        { .val = m.val / 0.3048 };      }
+
+SondeInches      sonde_centimeters_to_inches(SondeCentimeters cm) { return (SondeInches)   { .val = cm.val / 2.54 };       }
+SondeInches      sonde_millimeters_to_inches(SondeMillimeters mm) { return (SondeInches)   { .val = mm.val / 25.4 };       }
+
+/* Vector Conversions */
+SondeSpdDirKts   sonde_uv_to_spd_dir(SondeUVMps uv);
+SondeUVMps       sonde_spd_dir_to_uv(SondeSpdDirKts sd);
 
 /***************************************************************************************************************************
  *                                Thermodynamic Constants Frequently Used in Meteorology
@@ -194,6 +184,79 @@ SondeGw sonde_pft(
     SondeHectopascal p_sfc);
 
 /***************************************************************************************************************************
+ *                                                  Sounding Data Structure
+ **************************************************************************************************************************/
+typedef struct
+{
+    i64 station_number;   /* 0 is default and meaningless, ie no station number associated with this location. */
+    char *id;             /* Some textual station identifier, eg an ICAO identifier. Default NULL.             */
+    f64 latitude;         /* NaN values indicate a missing value.                                              */
+    f64 longitude;        /* NaN values indicate a missing value.                                              */
+    SondeMeter elevation; /* NaN values indicate a missing value.                                              */
+} SondeStationInfo;
+
+typedef enum
+{
+    SONDE_PC_PRESSURE            = (UINT32_C(1) <<  0),
+    SONDE_PC_TEMPERATURE         = (UINT32_C(1) <<  1),
+    SONDE_PC_DEW_POINT           = (UINT32_C(1) <<  2),
+    SONDE_PC_WET_BULB            = (UINT32_C(1) <<  3),
+    SONDE_PC_VIRTUAL_TEMPERATURE = (UINT32_C(1) <<  4),
+    SONDE_PC_THETA               = (UINT32_C(1) <<  5), /* Potential temperature             */
+    SONDE_PC_THETA_E             = (UINT32_C(1) <<  6), /* Equivalent potential temperature  */
+    SONDE_PC_PVV                 = (UINT32_C(1) <<  7), /* Pressure vertical velocity        */
+    SONDE_PC_GEOPOTENTIAL_HGT    = (UINT32_C(1) <<  8),
+    SONDE_PC_CLOUD_FRACTION      = (UINT32_C(1) <<  9),
+
+    /* These two are mutually exclusive. */
+    SONDE_PC_WIND_SPEED_DIR      = (UINT32_C(1) << 10),
+    SONDE_PC_WIND_UV             = (UINT32_C(1) << 11)
+} SondeProfileCode;
+
+b32 sonde_profile_code_present(u32 profiles, SondeProfileCode code);
+u32 sonde_profile_code_set(u32 profiles, SondeProfileCode code);
+
+typedef struct
+{
+    /* Sounding Metadata */
+    char *source;                /* Description of where this data came from                                          */
+    i64 valid_time;              /* Valid time as unix timestamp, seconds since Jan 1, 1970                           */
+    i32 lead_team;               /* Model lead time in hours, if this is a forecast sounding                          */
+
+    u32 profiles;                /* Keep track of which profiles are present in this sounding, with SondeProfileCode  */
+
+    /* Surface Data */
+    SondeHectopascal mslp;       /* Mean sea level pressure                                                           */
+    SondeHectopascal station_p;  /* Station pressure                                                                  */
+    SondeCelsius surface_t;      /* Station temperature                                                               */
+    SondeCelsius surface_dp;     /* Station dew point                                                                 */
+    SondeMillimeters precip_1hr; /* 1-hour precipitation                                                              */
+
+    /* Profile Data */
+    PakArrayLedger levels;       /* Ledger for the levels in the sounding                                             */
+    SondeHectopascal *p;         /* Pressure                                                                          */
+    SondeCelsius *t;             /* Temperature                                                                       */
+    SondeCelsius *dp;            /* Dew Point                                                                         */
+    SondeCelsius *wb;            /* Wet Bulb Temperature                                                              */
+    SondeCelsius *vt;            /* Virtual Temperature                                                               */
+    SondeKelvin *theta;          /* Potential Temperature                                                             */
+    SondeKelvin *theta_e;        /* Equivalent Potential Temperature                                                  */
+    SondeHectopascal *pvv;       /* Pressure Vertical Velocity                                                        */
+    SondeMeter *hgt;             /* Geopotential Height                                                               */
+    f64 *cloud_fraction;         /* Cloud fraction                                                                    */
+    union
+    {
+        SondeSpdDirKts *wind;    /* Wind speed and direction                                                          */
+        SondeUVMps *uv_wind;     /* Wind U (west to east) and V (south to north) components                           */
+    };
+} SondeSounding;
+
+SondeSounding *sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity);  // TODO
+
+/* File loading */
+void sonde_sounding_load_from_bufkit_str(MagAllocator *alloc, ElkStr txt, PakArrayLedger *sndgs_ledger, SondeSounding **sndgs); // TODO
+
+/***************************************************************************************************************************
  *                                                      Implementations
  **************************************************************************************************************************/
 
@@ -250,6 +313,31 @@ sonde_error_msg_from_value(f64 val)
 }
 
 typedef f64(*SondeRootFunc)(f64 x, f64 *params);
+
+SondeSpdDirKts
+sonde_uv_to_spd_dir(SondeUVMps uv)
+{
+    f64 spd = sqrt(uv.u * uv.u + uv.v * uv.v) * 1.9438444924406048;
+
+    f64 direction = 180.0 + 90.0 - atan2(uv.v, uv.u) * 180.0 /  M_PI;
+    while(direction < 0.0) { direction += 360.0; }
+    while(direction >= 360.0) { direction -= 360.0; }
+
+    return (SondeSpdDirKts) { .spd = spd, .dir = direction };
+}
+
+SondeUVMps
+sonde_spd_dir_to_uv(SondeSpdDirKts sd)
+{
+    f64 rads = sd.dir * M_PI / 180.0;
+    f64 spd = sd.spd / 1.9438444924406048;
+
+    f64 u = -spd * sin(rads);
+    f64 v = -spd * cos(rads);
+
+    return (SondeUVMps){ .u = u, .v = v };
+}
+
 
 /* Find the root of an equation given values bracketing a root. Used when finding wet bulb
  * temperature among other functions.
@@ -818,5 +906,24 @@ sonde_pft(SondeMeter zfc,
      * already 'divided' by 10^6.
      */
     return (SondeGw){ .val = PFT_CONST * density * z_fc_km * z_fc_km * mean_wind.val * theta_diff.val / 1000.0 };
+}
+
+b32 
+sonde_profile_code_present(u32 profiles, SondeProfileCode code)
+{
+    return !!(profiles & code);
+}
+
+u32 
+sonde_profile_code_set(u32 profiles, SondeProfileCode code)
+{
+    switch(code)
+    {
+        /* For mutually exclusive flags, make sure the other flag is turned off. */
+    case SONDE_PC_WIND_SPEED_DIR:  return (profiles & ~SONDE_PC_WIND_UV) | SONDE_PC_WIND_SPEED_DIR;
+    case SONDE_PC_WIND_UV:         return (profiles & ~SONDE_PC_WIND_SPEED_DIR) | SONDE_PC_WIND_UV;
+
+    default:                       return profiles | code;
+    };
 }
 

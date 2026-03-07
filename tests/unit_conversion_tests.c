@@ -77,6 +77,23 @@ unit_conversions_test_round_trips(void)
         AssertApproxEq(sm_original.val, sm_back_from_ft.val, ABS_EPS, PROP_EPS);
     }
 
+    f64 const deg_min =   0.0;
+    f64 const deg_max = 360.0;
+    f64 const knots_min = 0.001;
+    f64 const knots_max = 250.0;
+    for(f64 deg = deg_min; deg < deg_max; deg += 0.5)
+    {
+        for(f64 kts = knots_min; kts <= knots_max; kts += 1.0)
+        {
+            SondeSpdDirKts spd_dir = { .spd = kts, .dir = deg };
+            SondeUVMps uv = sonde_spd_dir_to_uv(spd_dir);
+            SondeSpdDirKts back = sonde_uv_to_spd_dir(uv);
+
+            AssertApproxEq(spd_dir.spd, back.spd, ABS_EPS, PROP_EPS);
+            AssertApproxEq(spd_dir.dir, back.dir, ABS_EPS, PROP_EPS);
+        }
+    }
+
 }
 #undef ABS_EPS
 #undef PROP_EPS
