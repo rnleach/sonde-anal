@@ -319,7 +319,7 @@ sonde_uv_to_spd_dir(SondeUVMps uv)
 {
     f64 spd = sqrt(uv.u * uv.u + uv.v * uv.v) * 1.9438444924406048;
 
-    f64 direction = 180.0 + 90.0 - atan2(uv.v, uv.u) * 180.0 /  M_PI;
+    f64 direction = 180.0 + 90.0 - atan2(uv.v, uv.u) * 180.0 /  ELK_PI;
     while(direction < 0.0) { direction += 360.0; }
     while(direction >= 360.0) { direction -= 360.0; }
 
@@ -329,7 +329,7 @@ sonde_uv_to_spd_dir(SondeUVMps uv)
 SondeUVMps
 sonde_spd_dir_to_uv(SondeSpdDirKts sd)
 {
-    f64 rads = sd.dir * M_PI / 180.0;
+    f64 rads = sd.dir * ELK_PI / 180.0;
     f64 spd = sd.spd / 1.9438444924406048;
 
     f64 u = -spd * sin(rads);

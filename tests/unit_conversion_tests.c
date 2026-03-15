@@ -95,6 +95,30 @@ unit_conversions_test_round_trips(void)
     }
 
 }
+
+void
+unit_conversion_test_winds(void)
+{
+    SondeSpdDirKts north360_10kts = { .spd = 10.0, .dir = 360.0 };
+    SondeSpdDirKts north000_10kts = { .spd = 10.0, .dir =   0.0 };
+    SondeUVMps north360_mps = sonde_spd_dir_to_uv(north360_10kts);
+    SondeUVMps north000_mps = sonde_spd_dir_to_uv(north000_10kts);
+    Assert(fabs(north360_mps.u) < ABS_EPS && north360_mps.v < 0.0);
+    Assert(fabs(north000_mps.u) < ABS_EPS && north000_mps.v < 0.0);
+
+    SondeSpdDirKts south_10kts = { .spd = 10.0, .dir = 180.0 };
+    SondeUVMps south_mps = sonde_spd_dir_to_uv(south_10kts);
+    Assert(fabs(south_mps.u) < ABS_EPS && south_mps.v > 0.0);
+
+    SondeSpdDirKts east_10kts = { .spd = 10.0, .dir = 90.0 };
+    SondeUVMps east_mps = sonde_spd_dir_to_uv(east_10kts);
+    Assert(fabs(east_mps.v) < ABS_EPS && east_mps.u < 0.0);
+
+    SondeSpdDirKts west_10kts = { .spd = 10.0, .dir = 270.0 };
+    SondeUVMps west_mps = sonde_spd_dir_to_uv(west_10kts);
+    Assert(fabs(west_mps.v) < ABS_EPS && west_mps.u > 0.0);
+}
+
 #undef ABS_EPS
 #undef PROP_EPS
 
@@ -108,6 +132,7 @@ all_unit_conversion_tests(void)
 
     unit_conversions_test_obvious_conversion_values();
     unit_conversions_test_round_trips();
+    unit_conversion_test_winds();
 
     printf("completed.\n");
 }
