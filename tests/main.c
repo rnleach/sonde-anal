@@ -11,31 +11,6 @@
 #undef NDEBUG
 #endif
 
-/* Crash immediately, useful with a debugger! */
-#ifndef HARD_EXIT
-  #define HARD_EXIT (*(int volatile*)0) 
-#endif
-
-#ifndef PanicIf
-  #define PanicIf(assertion) StopIf((assertion), HARD_EXIT)
-#endif
-
-#ifndef Panic
-  #define Panic() HARD_EXIT
-#endif
-
-#ifndef StopIf
-  #define StopIf(assertion, error_action) if (assertion) { error_action; }
-#endif
-
-#ifndef Assert
-  #ifndef NDEBUG
-    #define Assert(assertion) if(!(assertion)) { HARD_EXIT; }
-  #else
-    #define Assert(assertion) (void)(assertion)
-  #endif
-#endif
-
 void 
 AssertApproxEq(f64 left, f64 right, f64 abs_eps, f64 prop_eps)
 {
@@ -56,6 +31,7 @@ AssertApproxEq(f64 left, f64 right, f64 abs_eps, f64 prop_eps)
  *-------------------------------------------------------------------------------------------------------------------------*/
 #include "unit_conversion_tests.c"
 #include "thermodynamic_functions_test.c"
+#include "bufkit_test.c"
 
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                    Test Runner 
@@ -66,6 +42,7 @@ main(int argc, char *argv[])
     printf("\n\t\tBeginning sonde-anal tests.\n\n");
 
     all_unit_conversion_tests();
+    all_bufkit_tests();
     all_thermodynamic_functions_tests();
 
     printf("\n\t\tFinished sonde-anal tests.\n\n");

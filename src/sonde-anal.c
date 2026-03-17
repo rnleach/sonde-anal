@@ -35,6 +35,8 @@ b32 sonde_is_error(f64 val);
 char const *sonde_error_msg_from_code(SondeError err);
 char const *sonde_error_msg_from_value(f64 val);
 
+#define SondeErrorWrap(type, code) (type){ .val = sonde_error_create_nan(code) }
+
 /***************************************************************************************************************************
  *                                               Units of Measurement
  **************************************************************************************************************************/
@@ -189,7 +191,7 @@ SondeGw sonde_pft(
 typedef struct
 {
     i64 station_number;   /* 0 is default and meaningless, ie no station number associated with this location. */
-    char *id;             /* Some textual station identifier, eg an ICAO identifier. Default NULL.             */
+    ElkStr id;            /* Some textual station identifier, eg an ICAO identifier. Default NULL.             */
     f64 latitude;         /* NaN values indicate a missing value.                                              */
     f64 longitude;        /* NaN values indicate a missing value.                                              */
     SondeMeter elevation; /* NaN values indicate a missing value.                                              */
@@ -219,48 +221,57 @@ u32 sonde_profile_code_set(u32 profiles, SondeProfileCode code);
 typedef struct
 {
     /* Sounding Metadata */
-    char *source;                /* Description of where this data came from                                          */
-    i64 valid_time;              /* Valid time as unix timestamp, seconds since Jan 1, 1970                           */
-    i32 lead_team;               /* Model lead time in hours, if this is a forecast sounding                          */
+    SondeStationInfo stn_info;       /* Description of the sounding's location                                            */
+    ElkStr source;                   /* Description of where this data came from                                          */
+    ElkTime valid_time;              /* Valid time                                                                        */
+    i32 lead_time;                   /* Model lead time in hours, if this is a forecast sounding                          */
 
-    u32 profiles;                /* Keep track of which profiles are present in this sounding, with SondeProfileCode  */
+    u32 profiles;                    /* Keep track of which profiles are present in this sounding, with SondeProfileCode  */
 
     /* Surface Data */
-    SondeHectopascal mslp;       /* Mean sea level pressure                                                           */
-    SondeHectopascal station_p;  /* Station pressure                                                                  */
-    SondeCelsius surface_t;      /* Station temperature                                                               */
-    SondeCelsius surface_dp;     /* Station dew point                                                                 */
-    SondeMillimeters precip_1hr; /* 1-hour precipitation                                                              */
+    SondeHectopascal mslp;           /* Mean sea level pressure                                                           */
+    SondeHectopascal station_p;      /* Station pressure                                                                  */
+    SondeCelsius surface_t;          /* Station temperature                                                               */
+    SondeCelsius surface_dp;         /* Station dew point                                                                 */
+    SondeMillimeters precip_1hr;     /* 1-hour precipitation                                                              */
 
     /* Profile Data */
-    PakArrayLedger levels;       /* Ledger for the levels in the sounding                                             */
-    SondeHectopascal *p;         /* Pressure                                                                          */
-    SondeCelsius *t;             /* Temperature                                                                       */
-    SondeCelsius *dp;            /* Dew Point                                                                         */
-    SondeCelsius *wb;            /* Wet Bulb Temperature                                                              */
-    SondeCelsius *vt;            /* Virtual Temperature                                                               */
-    SondeKelvin *theta;          /* Potential Temperature                                                             */
-    SondeKelvin *theta_e;        /* Equivalent Potential Temperature                                                  */
-    SondeHectopascal *pvv;       /* Pressure Vertical Velocity                                                        */
-    SondeMeter *hgt;             /* Geopotential Height                                                               */
-    f64 *cloud_fraction;         /* Cloud fraction                                                                    */
+    PakArrayLedger levels;           /* Ledger for the levels in the sounding                                             */
+    SondeHectopascal *p;             /* Pressure                                                                          */
+    SondeCelsius *t;                 /* Temperature                                                                       */
+    SondeCelsius *dp;                /* Dew Point                                                                         */
+    SondeCelsius *wb;                /* Wet Bulb Temperature                                                              */
+    SondeCelsius *vt;                /* Virtual Temperature                                                               */
+    SondeKelvin *theta;              /* Potential Temperature                                                             */
+    SondeKelvin *theta_e;            /* Equivalent Potential Temperature                                                  */
+    SondeHectopascalPerSecond *pvv;  /* Pressure Vertical Velocity                                                        */
+    SondeMeter *hgt;                 /* Geopotential Height                                                               */
+    f64 *cloud_fraction;             /* Cloud fraction                                                                    */
     union
     {
-        SondeSpdDirKts *wind;    /* Wind speed and direction                                                          */
-        SondeUVMps *uv_wind;     /* Wind U (west to east) and V (south to north) components                           */
+        SondeSpdDirKts *wind;        /* Wind speed and direction                                                          */
+        SondeUVMps *uv_wind;         /* Wind U (west to east) and V (south to north) components                           */
     };
 } SondeSounding;
 
-SondeSounding *sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity);  // TODO
+SondeSounding *sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity);    /* Capacity is max number of levels. */
 
 /* File loading */
-void sonde_sounding_load_from_bufkit_str(MagAllocator *alloc, ElkStr txt, PakArrayLedger *sndgs_ledger, SondeSounding **sndgs); // TODO
+typedef struct SondeSoundingList
+{
+    ElkTime valid_time;
+    SondeSounding *snd;
+    struct SondeSoundingList *next;
+} SondeSoundingList;
+
+SondeSoundingList *sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_description);
 
 /***************************************************************************************************************************
  *                                                      Implementations
  **************************************************************************************************************************/
 
 _Static_assert(SONDE_ERROR_NUMBER_OF_ERRORS < INT32_MAX, "Too many error types.");
+_Static_assert(sizeof(SondeSpdDirKts) == sizeof(SondeUVMps), "Mismatch in type sizes for array punning.");
 
 typedef union { f64 x; u64 i; } SondeErrorPun;
 
@@ -466,7 +477,7 @@ sonde_vapor_pressure_water(SondeCelsius dp)
 {
     if(dp.val < SONDE_MIN_T_VP_LIQUID_C || dp.val > SONDE_MAX_T_VP_LIQUID_C)
     {
-        return (SondeHectopascal){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; 
+        return SondeErrorWrap(SondeHectopascal, SONDE_ERROR_OUT_OF_RANGE); 
     }
 
     return (SondeHectopascal){ .val = 6.1037 * exp(17.641 * dp.val / (dp.val + 243.27)) };
@@ -485,7 +496,7 @@ sonde_dew_point_from_vapor_pressure(SondeHectopascal vp)
 
     if (dp_c < SONDE_MIN_T_VP_LIQUID_C || dp_c > SONDE_MAX_T_VP_LIQUID_C)
     {
-        return (SondeCelsius){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+        return SondeErrorWrap(SondeCelsius, SONDE_ERROR_OUT_OF_RANGE);
     }
 
     return (SondeCelsius){ .val = dp_c };
@@ -503,7 +514,7 @@ sonde_vapor_pressure_ice(SondeCelsius fp)
 {
     if(fp.val < SONDE_MIN_T_VP_ICE_C || fp.val > SONDE_MAX_T_VP_ICE_C)
     {
-        return (SondeHectopascal){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+        return SondeErrorWrap(SondeHectopascal, SONDE_ERROR_OUT_OF_RANGE); 
     }
     
     return (SondeHectopascal){ .val = 6.1121 * exp(22.587 * fp.val / (fp.val + 273.86)) };
@@ -522,7 +533,7 @@ sonde_frost_point_from_vapor_pressure_over_ice(SondeHectopascal vp)
 
     if (fp_c < SONDE_MIN_T_VP_ICE_C || fp_c > SONDE_MAX_T_VP_ICE_C)
     {
-        return (SondeCelsius){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) };
+        return SondeErrorWrap(SondeCelsius, SONDE_ERROR_OUT_OF_RANGE);
     }
 
     return (SondeCelsius){ .val = fp_c };
@@ -667,7 +678,7 @@ sonde_latent_heat_of_condensation_vaporization(SondeCelsius t)
      */
     if (t.val < -100.0 || t.val > 60.0)
     {
-        return (SondeJpKgpK) { .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; 
+        return SondeErrorWrap(SondeJpKgpK, SONDE_ERROR_OUT_OF_RANGE);
     }
 
     /*f64 val = (2500.8 - 2.36 * t.val + 0.0016 * t.val * t.val - 0.00006 * t.val * t.val * t.val) * 1000.0; */
@@ -698,7 +709,7 @@ sonde_equivalent_potential_temperature(SondeCelsius t, SondeCelsius dp, SondeHec
     f64 rv = sonde_mixing_ratio(dp, p);
     f64 pd = p.val - sonde_vapor_pressure_water(dp).val;
 
-    if(pd < 0.0) { return (SondeKelvin){ .val = sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT) }; }
+    if(pd < 0.0) { return SondeErrorWrap(SondeKelvin, SONDE_ERROR_INVALID_INPUT); }
 
     f64 h = sonde_relative_humidity_liquid(t, dp);
     SondeJpKgpK lv = sonde_latent_heat_of_condensation_vaporization(t);
@@ -709,7 +720,7 @@ sonde_equivalent_potential_temperature(SondeCelsius t, SondeCelsius dp, SondeHec
         * pow(h, -rv * (sonde_const_Rv.val / sonde_const_cpd.val))
         * exp(lv.val * rv / sonde_const_cpd.val / t_k.val);
 
-    if(isinf(theta_e)) { return (SondeKelvin){ .val = sonde_error_create_nan(SONDE_ERROR_OUT_OF_RANGE) }; }
+    if(isinf(theta_e)) { return SondeErrorWrap(SondeKelvin, SONDE_ERROR_OUT_OF_RANGE); }
     return (SondeKelvin){ .val = theta_e };
 }
 
@@ -925,5 +936,362 @@ sonde_profile_code_set(u32 profiles, SondeProfileCode code)
 
     default:                       return profiles | code;
     };
+}
+
+SondeSounding *
+sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
+{
+    SondeSounding *snd = mag_allocator_malloc(alloc, SondeSounding);
+
+    snd->profiles = 0;
+
+    snd->mslp = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA);
+    snd->station_p = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA);
+    snd->surface_t = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+    snd->surface_dp = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+    snd->precip_1hr = SondeErrorWrap(SondeMillimeters, SONDE_ERROR_MISSING_DATA);
+
+    snd->levels = pak_array_ledger_create(capacity);
+    snd->p =              mag_allocator_nmalloc(alloc, capacity, SondeHectopascal);          Assert(snd->p);
+    snd->t =              mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->t);
+    snd->dp =             mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->dp);
+    snd->wb =             mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->wb);
+    snd->vt =             mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->vt);
+    snd->theta =          mag_allocator_nmalloc(alloc, capacity, SondeKelvin);               Assert(snd->theta);
+    snd->theta_e =        mag_allocator_nmalloc(alloc, capacity, SondeKelvin);               Assert(snd->theta_e);
+    snd->pvv =            mag_allocator_nmalloc(alloc, capacity, SondeHectopascalPerSecond); Assert(snd->pvv);
+    snd->hgt =            mag_allocator_nmalloc(alloc, capacity, SondeMeter);                Assert(snd->hgt);
+    snd->cloud_fraction = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->cloud_fraction);
+    snd->uv_wind =        mag_allocator_nmalloc(alloc, capacity, SondeUVMps);                Assert(snd->uv_wind);
+
+    /* Initialize all the profile data to missing values */
+    for(size i = 0; i < capacity; ++i)
+    {
+        snd->p[i] = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA); 
+        snd->t[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
+        snd->dp[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
+        snd->wb[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
+        snd->vt[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
+        snd->theta[i] = SondeErrorWrap(SondeKelvin, SONDE_ERROR_MISSING_DATA); 
+        snd->theta_e[i] = SondeErrorWrap(SondeKelvin, SONDE_ERROR_MISSING_DATA); 
+        snd->pvv[i] = SondeErrorWrap(SondeHectopascalPerSecond, SONDE_ERROR_MISSING_DATA); 
+        snd->hgt[i] = SondeErrorWrap(SondeMeter, SONDE_ERROR_MISSING_DATA); 
+        snd->cloud_fraction[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
+        snd->uv_wind[i] = (SondeUVMps)
+            {
+                .u = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA),
+                .v = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA)
+            };
+    }
+
+    return snd;
+}
+
+typedef enum
+{
+    SBPC_NONE = 0, /* Column does not exist                                          */
+    SBPC_PRES,     /* Pressure hPa                                                   */
+    SBPC_T,        /* Temperature, Celsius                                           */
+    SBPC_WB,       /* Web bulb temperature, Celsius                                  */
+    SBPC_DP,       /* Dew point temperature, Celsius                                 */
+    SBPC_THETA_E,  /* Equivalent potential temperature, Kelvin                       */
+    SBPC_DRCT,     /* Wind direction degrees                                         */
+    SBPC_SPD,      /* Wind speed, knots                                              */
+    SBPC_PVV,      /* Pressure vertical velocity                                     */
+    SBPC_CLD,      /* Cloud fraction                                                 */
+    SBPC_HGT,      /* Geopotential height, meters                                    */
+} SondeBufkitProfileColumns;
+
+b32
+sonde_bufkit_parse_datetime(ElkStr str, ElkTime *out)
+{
+    /* YYMMDD/HHMM format */
+    i64 year = INT64_MIN;
+    i64 month = INT64_MIN;
+    i64 day = INT64_MIN;
+    i64 hour = INT64_MIN;
+    i64 minutes = INT64_MIN;
+
+    if(
+        elk_str_parse_i64(elk_str_substr(str,  0, 2), &year     ) && 
+        elk_str_parse_i64(elk_str_substr(str,  2, 2), &month    ) &&
+        elk_str_parse_i64(elk_str_substr(str,  4, 2), &day      ) &&
+        elk_str_parse_i64(elk_str_substr(str,  7, 2), &hour     ) &&
+        elk_str_parse_i64(elk_str_substr(str,  9, 2), &minutes  ))
+    {
+        year = year > 80 ? year + 1900 : year + 2000;
+        *out = elk_time_from_ymd_and_hms((i16)year, (i8)month, (i8)day, (i8)hour, (i8)minutes, 0);
+        return true;
+    }
+
+    return false;
+}
+
+ElkStrSplitPair
+sonde_bufkit_next_token(ElkStr input)
+{
+    ElkStr left = { .start = input.start, .len = 0 };
+    ElkStr right = {0};
+
+    /* Skip any leading space. */
+    size cnt = 0;
+    while( cnt < input.len && (*left.start == ' ' || *left.start == '\n'))
+    {
+        ++left.start;
+        ++cnt;
+    }
+
+    /* Find the length */
+    while(cnt < input.len && left.start[left.len] != ' ' && left.start[left.len] != '\n')
+    {
+        ++left.len;
+        ++cnt;
+    }
+
+    right.start = left.start + left.len;
+    right.len = input.len - cnt;
+
+    return (ElkStrSplitPair){ .left = elk_str_strip(left), .right = right };
+}
+
+SondeSoundingList *
+sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_description)
+{
+    SondeSoundingList *sndgs = NULL;
+    SondeSoundingList *current_sndg = NULL;
+
+    /* Split the file into the upper air and surface sections. */
+    ElkStrSplitPair pair = elk_str_split_at_substr_nt(txt, "STN YYMMDD/HHMM ");
+    StopIf(!pair.right.start, goto RETURN);       /* Return early with what data we were able to parse */
+    ElkStr upper_air = pair.left;
+    //ElkStr surface = pair.right;
+
+    /* Get the header row that lists the available columns */
+    pair = elk_str_split_at_substr_nt(upper_air, "STID =");
+    ElkStr header = elk_str_strip(pair.left);
+    ElkStr upper_air_body = pair.right;
+
+    /* Parse the column names */
+    SondeBufkitProfileColumns cols[16] = {0};
+    pair = elk_str_split_on_char(header, '\n');   /* Should leave "SNPARM = ..." as pair.left   */
+    pair = elk_str_split_on_char(pair.left, '='); /* leaves just the column names in pair.right */
+    pair = elk_str_split_on_char(elk_str_strip(pair.right), ';');
+    size n_cols = 0;
+    u32 profiles = 0;
+    while(pair.left.len > 0 && n_cols < ECO_ARRAY_SIZE(cols))
+    {
+        if(elk_str_eq((ElkStr){ .start = "PRES", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_PRES;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_PRESSURE);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "TMPC", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_T;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_TEMPERATURE);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "TMWC", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_WB;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_WET_BULB);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "DWPC", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_DP;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_DEW_POINT);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "THTE", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_THETA_E;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_THETA_E);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "DRCT", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_DRCT;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_WIND_SPEED_DIR);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "SKNT", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_SPD;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_WIND_SPEED_DIR);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "OMEG", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_PVV;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_PVV);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "CFRL", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_CLD;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_CLOUD_FRACTION);
+        }
+        else if(elk_str_eq((ElkStr){ .start = "HGHT", .len = 4}, pair.left))
+        {
+            cols[n_cols++] = SBPC_HGT;
+            profiles = sonde_profile_code_set(profiles, SONDE_PC_GEOPOTENTIAL_HGT);
+        }
+        else
+        {
+            n_cols++;
+        }
+
+        pair = elk_str_split_on_char(elk_str_strip(pair.right), ';');
+    }
+
+    /* Parse the upper section */
+    ElkStr split_str = { .start = "STID = ", .len = 7 };
+    pair = elk_str_split_on_substr(upper_air_body, split_str); /* Chop off leading STID */
+    pair = elk_str_split_on_substr(pair.right, split_str);
+    while(pair.left.len > 0)
+    {
+        ElkStr remaining_text = elk_str_strip(pair.left);
+
+        /* Create the new node and sounding. */
+        i64 capacity = elk_str_line_count(remaining_text);
+        if(n_cols > 8) { capacity = capacity / 2 + 1; } else { capacity += 1; } /* "rows" can be stored on multiple lines */
+        SondeSoundingList *new_node = eco_arena_malloc(alloc, SondeSoundingList);
+        SondeSounding *new_sndg = sonde_sounding_alloc_and_init(alloc, capacity);
+        StopIf(!(new_node && new_sndg), break);
+        new_node->snd = new_sndg;
+
+        /* Store this new node in the list */
+        if(!sndgs) 
+        {
+            sndgs = new_node;
+            current_sndg = new_node;
+        }
+        else
+        {
+            current_sndg->next = new_node;
+            current_sndg = new_node;
+        }
+
+        /* Get the ledger for keeping track of levels, and skip index zero to save it for surface data */
+        PakArrayLedger *levels = &new_sndg->levels;
+        size idx = pak_array_ledger_push_back_index(levels); 
+
+        /* Record what profiles are present */
+        new_sndg->profiles = profiles;
+
+        /* Set the source description */
+        new_sndg->source = eco_str_alloc_copy(source_description, alloc);
+
+        /* Parse the station id */
+        ElkStrSplitPair inner_pair = elk_str_split_on_char(remaining_text, ' ');
+        new_sndg->stn_info.id = eco_str_alloc_copy(elk_str_strip(inner_pair.left), alloc);
+        remaining_text = inner_pair.right;
+
+        /* Parse the station number */
+        ElkStr stnm_pattern = { .start = "STNM = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, stnm_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
+        remaining_text = inner_pair.right;
+        b32 success = elk_str_parse_i64(inner_pair.left, &new_sndg->stn_info.station_number);
+        Assert(success); /* FIXME: What to do if this fails? Do I really need a station number at all? */
+
+        /* Parse the time */
+        ElkStr time_pattern = { .start = "TIME = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, time_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, '\n');
+        remaining_text = inner_pair.right;
+        success &= sonde_bufkit_parse_datetime(elk_str_strip(inner_pair.left), &new_sndg->valid_time);
+        new_node->valid_time = new_sndg->valid_time;
+        Assert(success);
+
+        /* Parse the the latitude */
+        ElkStr lat_pattern = { .start = "SLAT = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, lat_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
+        remaining_text = inner_pair.right;
+        success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.latitude);
+        Assert(success); /* FIXME: What to do if this fails? Do I really need a latitude at all? */
+
+        /* Parse the the longitude */
+        ElkStr lon_pattern = { .start = "SLON = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, lon_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
+        remaining_text = inner_pair.right;
+        success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.longitude);
+        Assert(success); /* FIXME: What to do if this fails? Do I really need a longitude at all? */
+
+        /* Parse the elevation in meters */
+        ElkStr elev_pattern = { .start = "SELV = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, elev_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, '\n');
+        remaining_text = inner_pair.right;
+        success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.elevation.val);
+        Assert(success); /* FIXME: What to do if this fails? Do I really need an elevation at all? */
+
+        /* Parse the lead time. */
+        ElkStr lt_pattern = { .start = "STIM = ", .len = 7 };
+        inner_pair = elk_str_split_on_substr(remaining_text, lt_pattern);
+        inner_pair = elk_str_split_on_char(inner_pair.right, '\n');
+        remaining_text = inner_pair.right;
+        i64 tmp = 0;
+        success &= elk_str_parse_i64(elk_str_strip(inner_pair.left), &tmp);
+        Assert(success); 
+        new_sndg->lead_time = (i32)tmp;
+
+        /* Skip the header row */
+        ElkStr profiles_pattern = { .start = "PRES ", .len = 5 };
+        inner_pair = elk_str_split_at_substr(remaining_text, profiles_pattern);
+        remaining_text = inner_pair.right;
+        size next_token_num = 0;
+        do 
+        {
+            inner_pair = sonde_bufkit_next_token(remaining_text);
+            remaining_text = inner_pair.right;
+            ++next_token_num;
+        } while(next_token_num % n_cols);
+        Assert(next_token_num % n_cols == 0);
+        Assert(idx == 0);
+
+        /* Parse the profiles */
+        do
+        {
+            /* Go up a level once we've parsed all the columns */
+            if(next_token_num % n_cols == 0)
+            {
+                idx = pak_array_ledger_push_back_index(levels);
+                if(idx == PAK_COLLECTION_FULL) { break; }
+            }
+
+            /* Get the next token */
+            inner_pair = sonde_bufkit_next_token(remaining_text);
+            ElkStr token = inner_pair.left;
+            if(token.len == 0 || !token.start) { break; }
+            remaining_text = inner_pair.right;
+
+            f64 tmp;
+            success &= elk_str_fast_parse_f64(token, &tmp); Assert(success);
+            if(tmp == -9999.0) { tmp = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); } /* Check for missing data */
+
+            switch(cols[next_token_num % n_cols])
+            {
+                case SBPC_PRES:    { new_sndg->p[idx]              = (SondeHectopascal){ .val = tmp }; }          break;
+                case SBPC_T:       { new_sndg->t[idx]              = (SondeCelsius){ .val = tmp }; }              break;
+                case SBPC_WB:      { new_sndg->wb[idx]             = (SondeCelsius){ .val = tmp }; }              break;
+                case SBPC_DP:      { new_sndg->dp[idx]             = (SondeCelsius){ .val = tmp }; }              break;
+                case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin){ .val = tmp }; }               break;
+                case SBPC_DRCT:    { new_sndg->wind[idx].dir       = tmp; }                                       break;
+                case SBPC_SPD:     { new_sndg->wind[idx].spd       = tmp; }                                       break;
+                case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp }; } break;
+                case SBPC_CLD:     { new_sndg->cloud_fraction[idx] = tmp; }                                       break;
+                case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter){ .val = tmp }; }                break;
+                default: { /* ignore unknown values */ }                                                          break;
+            }
+
+            ++next_token_num;
+        } while(true);
+
+        /* Move to the next profile */
+        pair = elk_str_split_on_substr(pair.right, split_str);
+    }
+
+    // TODO: Parse the surface section
+
+RETURN:
+
+    return sndgs;
 }
 
