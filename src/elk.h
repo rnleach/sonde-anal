@@ -849,7 +849,7 @@ elk_str_split_on_char(ElkStr str, char const split_char)
     ElkStr left = { .start = str.start, .len = 0 };
     ElkStr right = { .start = NULL, .len = 0 };
 
-    for(char const *c = str.start; *c != split_char && left.len < str.len; ++c, ++left.len);
+    for(char const *c = str.start; left.len < str.len && *c != split_char; ++c, ++left.len);
 
     if(left.len + 1 < str.len)
     {
