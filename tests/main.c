@@ -1,3 +1,8 @@
+/* Ensure assertions of all types are working for tests. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <stdio.h>
 
 #include "../src/sonde-anal.c"
@@ -5,11 +10,6 @@
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                               Test Assertion Tools
  *-------------------------------------------------------------------------------------------------------------------------*/
-
-/* Ensure assertions of all types are working for tests. */
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 
 void 
 AssertApproxEq(f64 left, f64 right, f64 abs_eps, f64 prop_eps)
