@@ -1000,10 +1000,10 @@ typedef enum
     SBPC_PVV,      /* Pressure vertical velocity                                     */
     SBPC_CLD,      /* Cloud fraction                                                 */
     SBPC_HGT,      /* Geopotential height, meters                                    */
-} SondeBufkitProfileColumns;
+} InternalSondeBufkitProfileColumns;
 
 b32
-sonde_bufkit_parse_datetime(ElkStr str, ElkTime *out)
+internal_sonde_bufkit_parse_datetime(ElkStr str, ElkTime *out)
 {
     /* YYMMDD/HHMM format */
     i64 year = INT64_MIN;
@@ -1028,7 +1028,7 @@ sonde_bufkit_parse_datetime(ElkStr str, ElkTime *out)
 }
 
 ElkStrSplitPair
-sonde_bufkit_next_token(ElkStr input)
+internal_sonde_bufkit_next_token(ElkStr input)
 {
     ElkStr left = { .start = input.start, .len = 0 };
     ElkStr right = {0};
@@ -1072,7 +1072,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
     ElkStr upper_air_body = pair.right;
 
     /* Parse the column names */
-    SondeBufkitProfileColumns cols[16] = {0};
+    InternalSondeBufkitProfileColumns cols[16] = {0};
     pair = elk_str_split_on_char(header, '\n');   /* Should leave "SNPARM = ..." as pair.left   */
     pair = elk_str_split_on_char(pair.left, '='); /* leaves just the column names in pair.right */
     pair = elk_str_split_on_char(elk_str_strip(pair.right), ';');
@@ -1187,14 +1187,18 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
         remaining_text = inner_pair.right;
         b32 success = elk_str_parse_i64(inner_pair.left, &new_sndg->stn_info.station_number);
-        Assert(success); /* FIXME: What to do if this fails? Do I really need a station number at all? */
+        if(!success)
+        {
+            new_sndg->stn_info.station_number = 0;
+            success = true;
+        }
 
         /* Parse the time */
         ElkStr time_pattern = { .start = "TIME = ", .len = 7 };
         inner_pair = elk_str_split_on_substr(remaining_text, time_pattern);
         inner_pair = elk_str_split_on_char(inner_pair.right, '\n');
         remaining_text = inner_pair.right;
-        success &= sonde_bufkit_parse_datetime(elk_str_strip(inner_pair.left), &new_sndg->valid_time);
+        success &= internal_sonde_bufkit_parse_datetime(elk_str_strip(inner_pair.left), &new_sndg->valid_time);
         new_node->valid_time = new_sndg->valid_time;
         Assert(success);
 
@@ -1204,7 +1208,11 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
         remaining_text = inner_pair.right;
         success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.latitude);
-        Assert(success); /* FIXME: What to do if this fails? Do I really need a latitude at all? */
+        if(!success)
+        {
+            new_sndg->stn_info.latitude = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA);
+            success = true;
+        }
 
         /* Parse the the longitude */
         ElkStr lon_pattern = { .start = "SLON = ", .len = 7 };
@@ -1212,7 +1220,11 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         inner_pair = elk_str_split_on_char(inner_pair.right, ' ');
         remaining_text = inner_pair.right;
         success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.longitude);
-        Assert(success); /* FIXME: What to do if this fails? Do I really need a longitude at all? */
+        if(!success)
+        {
+            new_sndg->stn_info.longitude = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA);
+            success = true;
+        }
 
         /* Parse the elevation in meters */
         ElkStr elev_pattern = { .start = "SELV = ", .len = 7 };
@@ -1220,7 +1232,11 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         inner_pair = elk_str_split_on_char(inner_pair.right, '\n');
         remaining_text = inner_pair.right;
         success &= elk_str_fast_parse_f64(inner_pair.left, &new_sndg->stn_info.elevation.val);
-        Assert(success); /* FIXME: What to do if this fails? Do I really need an elevation at all? */
+        if(!success)
+        {
+            new_sndg->stn_info.elevation = SondeErrorWrap(SondeMeter, SONDE_ERROR_MISSING_DATA);
+            success = true;
+        }
 
         /* Parse the lead time. */
         ElkStr lt_pattern = { .start = "STIM = ", .len = 7 };
@@ -1239,7 +1255,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         size next_token_num = 0;
         do 
         {
-            inner_pair = sonde_bufkit_next_token(remaining_text);
+            inner_pair = internal_sonde_bufkit_next_token(remaining_text);
             remaining_text = inner_pair.right;
             ++next_token_num;
         } while(next_token_num % n_cols);
@@ -1257,7 +1273,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
             }
 
             /* Get the next token */
-            inner_pair = sonde_bufkit_next_token(remaining_text);
+            inner_pair = internal_sonde_bufkit_next_token(remaining_text);
             ElkStr token = inner_pair.left;
             if(token.len == 0 || !token.start) { break; }
             remaining_text = inner_pair.right;
