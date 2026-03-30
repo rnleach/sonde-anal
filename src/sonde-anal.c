@@ -1000,6 +1000,8 @@ typedef enum
     SBPC_PVV,      /* Pressure vertical velocity                                     */
     SBPC_CLD,      /* Cloud fraction                                                 */
     SBPC_HGT,      /* Geopotential height, meters                                    */
+    SBPC_UW,       /* U-wind component, meters per second                            */
+    SBPC_VW,       /* V-wind component, meters per second                            */
 } InternalSondeBufkitProfileColumns;
 
 b32
@@ -1064,15 +1066,26 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
     ElkStrSplitPair pair = elk_str_split_at_substr_nt(txt, "STN YYMMDD/HHMM ");
     StopIf(!pair.right.start, goto RETURN);       /* Return early with what data we were able to parse */
     ElkStr upper_air = pair.left;
-    //ElkStr surface = pair.right;
+    ElkStr surface = pair.right;
 
     /* Get the header row that lists the available columns */
     pair = elk_str_split_at_substr_nt(upper_air, "STID =");
     ElkStr header = elk_str_strip(pair.left);
     ElkStr upper_air_body = pair.right;
 
-    /* Parse the column names */
-    InternalSondeBufkitProfileColumns cols[16] = {0};
+    /* Parse the column names for the upper air data ----------------------------------------------------------------------*/
+    /* PRES - Pressure (hPa)                       */
+    /* TMPC - Temperature (C)                      */
+    /* TMWC - Wet bulb temperature (C)             */
+    /* DWPC - Dewpoint (C)                         */
+    /* THTE - Equivalent potential temperature (K) */
+    /* DRCT - Wind direction (degrees)             */
+    /* SKNT - Wind speed (knots)                   */
+    /* OMEG - Vertical velocity (Pa/s)             */
+    /* CFRL - Fractional cloud coverage (percent)  */
+    /* HGHT - Height of pressure level (m)         */
+
+    InternalSondeBufkitProfileColumns cols[40] = {0};
     pair = elk_str_split_on_char(header, '\n');   /* Should leave "SNPARM = ..." as pair.left   */
     pair = elk_str_split_on_char(pair.left, '='); /* leaves just the column names in pair.right */
     pair = elk_str_split_on_char(elk_str_strip(pair.right), ';');
@@ -1284,16 +1297,16 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
 
             switch(cols[next_token_num % n_cols])
             {
-                case SBPC_PRES:    { new_sndg->p[idx]              = (SondeHectopascal){ .val = tmp }; }          break;
-                case SBPC_T:       { new_sndg->t[idx]              = (SondeCelsius){ .val = tmp }; }              break;
-                case SBPC_WB:      { new_sndg->wb[idx]             = (SondeCelsius){ .val = tmp }; }              break;
-                case SBPC_DP:      { new_sndg->dp[idx]             = (SondeCelsius){ .val = tmp }; }              break;
-                case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin){ .val = tmp }; }               break;
-                case SBPC_DRCT:    { new_sndg->wind[idx].dir       = tmp; }                                       break;
-                case SBPC_SPD:     { new_sndg->wind[idx].spd       = tmp; }                                       break;
+                case SBPC_PRES:    { new_sndg->p[idx]              = (SondeHectopascal)         { .val = tmp }; } break;
+                case SBPC_T:       { new_sndg->t[idx]              = (SondeCelsius)             { .val = tmp }; } break;
+                case SBPC_WB:      { new_sndg->wb[idx]             = (SondeCelsius)             { .val = tmp }; } break;
+                case SBPC_DP:      { new_sndg->dp[idx]             = (SondeCelsius)             { .val = tmp }; } break;
+                case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin)              { .val = tmp }; } break;
+                case SBPC_DRCT:    { new_sndg->wind[idx].dir       =                                     tmp;   } break;
+                case SBPC_SPD:     { new_sndg->wind[idx].spd       =                                     tmp;   } break;
                 case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp }; } break;
-                case SBPC_CLD:     { new_sndg->cloud_fraction[idx] = tmp; }                                       break;
-                case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter){ .val = tmp }; }                break;
+                case SBPC_CLD:     { new_sndg->cloud_fraction[idx] =                                     tmp;   } break;
+                case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter)               { .val = tmp }; } break;
                 default: { /* ignore unknown values */ }                                                          break;
             }
 
@@ -1304,7 +1317,157 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         pair = elk_str_split_on_substr(pair.right, split_str);
     }
 
-    // TODO: Parse the surface section
+    /* Parse the column names for the surface data ------------------------------------------------------------------------*/
+    /* STN  - 6-digit station number                              */
+    /* YYMMDD/HHMM - Valid time (UTC) in numeric format           */
+    /* PMSL - Mean sea level pressure (hPa)                       */
+    /* PRES - Station pressure (hPa)                              */
+    /* SKTC - Skin temperature (C)                                */
+    /* STC1 - Layer 1 soil temperature (K)                        */
+    /* SNFL - 1-hour accumulated snowfall (Kg/m**2)               */
+    /* WTNS - Soil moisture availability (percent)                */
+    /* P01M - 1-hour total precipitation (mm)                     */
+    /* C01M - 1-hour convective precipitation (mm)                */
+    /* STC2 - Layer 2 soil temperature (K)                        */
+    /* LCLD - Low cloud coverage (percent)                        */
+    /* MCLD - Middle cloud coverage (percent)                     */
+    /* HCLD - High cloud coverage (percent)                       */
+    /* SNRA - Snow ratio from explicit cloud scheme (percent)     */
+    /* UWND - 10-meter U wind component (m/s)                     */
+    /* VWND - 10-meter V wind component (m/s)                     */
+    /* R01M - 1-hour accumulated surface runoff (mm)              */
+    /* BFGR - 1-hour accumulated baseflow-groundwater runoff (mm) */
+    /* T2MS - 2-meter temperature (C)                             */
+    /* Q2MS - 2-meter specific humidity                           */
+    /* WXTS - Snow precipitation type (1=Snow)                    */
+    /* WXTP - Ice pellets precipitation type (1=Ice pellets)      */
+    /* WXTZ - Freezing rain precipitation type (1=Freezing rain)  */
+    /* WXTR - Rain precipitation type (1=Rain)                    */
+    /* USTM - U-component of storm motion (m/s)                   */
+    /* VSTM - V-component of storm motion (m/s)                   */
+    /* HLCY - Storm relative helicity (m**2/s**2)                 */
+    /* SLLH - 1-hour surface evaporation (mm)                     */
+    /* EVAP - Evaportaion, units not given, mm?                   */
+    /* WSYM - Weather type symbol number                          */
+    /* CDBP - Pressure at the base of cloud (hPa)                 */
+    /* VSBK - Visibility (km)                                     */
+    /* TD2M - 2-meter dewpoint (C)                                */
+    /* more paramters than listed here!                           */
+
+    memset(cols, 0, sizeof(cols));
+
+    /* Get the header row that lists the available columns in the surface data */
+    size sfc_header_len = 0;
+    for(char *c = surface.start; *c; ++c)
+    {
+        ++sfc_header_len;
+
+        if(*c == '\n' && *(c + 1)) /* If this is a new line and not the end of the string... */
+        {
+            char c1 = *(c + 1);    /* Check if the next line starts with a number.           */
+            if(c1 >= '0' && c1 <= '9') { break; }
+        }
+    }
+    ElkStr sfc_header = elk_str_substr(surface, 0, sfc_header_len);
+    ElkStr sfc_body = elk_str_substr(surface, sfc_header_len, surface.len - sfc_header_len);
+    pair = elk_str_split_on_char(sfc_header, ' ');
+
+    n_cols = 0;
+    while(pair.left.len > 0 && n_cols < ECO_ARRAY_SIZE(cols))
+    {
+        if(elk_str_eq((ElkStr)     { .start = "PRES", .len = 4}, pair.left)) { cols[n_cols++] = SBPC_PRES; }
+        else if(elk_str_eq((ElkStr){ .start = "T2MS", .len = 4}, pair.left)) { cols[n_cols++] = SBPC_T;    }
+        else if(elk_str_eq((ElkStr){ .start = "TD2M", .len = 4}, pair.left)) { cols[n_cols++] = SBPC_DP;   }
+        else if(elk_str_eq((ElkStr){ .start = "UWND", .len = 4}, pair.left)) { cols[n_cols++] = SBPC_UW;   }
+        else if(elk_str_eq((ElkStr){ .start = "VWND", .len = 4}, pair.left)) { cols[n_cols++] = SBPC_VW;   }
+        else { n_cols++; }
+
+        ElkStrSplitPair p2 = elk_str_split_on_char(pair.right, ' ');
+        ElkStrSplitPair p3 = elk_str_split_on_char(pair.right, '\n');
+        pair = (p2.left.len > 0 && p2.left.len <= p3.left.len) ? p2 : p3;
+        pair.left = elk_str_strip(pair.left);
+    }
+
+    /* Parse the surface section */
+    b32 success = true;
+    size next_token_num = 0;
+    pair = elk_str_split_on_char(sfc_body, ' ');
+    ElkStr token = elk_str_strip(pair.left);
+    ElkStr remaining = elk_str_strip(pair.right);
+    SondeHectopascal sfc_pres = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA);
+    SondeCelsius sfc_t = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+    SondeCelsius sfc_dp = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+    SondeMps sfc_u = SondeErrorWrap(SondeMps, SONDE_ERROR_MISSING_DATA);
+    SondeMps sfc_v = SondeErrorWrap(SondeMps, SONDE_ERROR_MISSING_DATA);
+    ElkTime valid_time = {0};
+    current_sndg = sndgs;
+    while(token.len > 0)
+    {
+        /* Check for and parse the valid time */
+        if(next_token_num % n_cols == 1)
+        {
+            success &= internal_sonde_bufkit_parse_datetime(token, &valid_time); Assert(success);
+        }
+        else
+        {
+            f64 tmp;
+            success &= elk_str_fast_parse_f64(token, &tmp); Assert(success);
+            if(tmp == -9999.0 || tmp == 999.0)  /* Check for missing data */
+            {
+                tmp = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA);
+            }
+
+            switch(cols[(next_token_num) % n_cols])
+            {
+                case SBPC_PRES: { sfc_pres.val = tmp; } break;
+                case SBPC_T:    { sfc_t.val    = tmp; } break;
+                case SBPC_DP:   { sfc_dp.val   = tmp; } break;
+                case SBPC_UW:   { sfc_u.val    = tmp; } break;
+                case SBPC_VW:   { sfc_u.val    = tmp; } break;
+                default: { /* ignore unknown cols */  } break;
+            }
+        }
+
+        ++next_token_num;
+
+        /* Store the data once we've parsed all columns */
+        if(next_token_num % n_cols == 0)
+        {
+            while(current_sndg && current_sndg->valid_time < valid_time)
+            {
+                current_sndg = current_sndg->next;
+            }
+
+            if(current_sndg->valid_time == valid_time)
+            {
+                current_sndg->snd->station_p = sfc_pres;
+                current_sndg->snd->p[0] = sfc_pres;
+                current_sndg->snd->surface_t = sfc_t;
+                current_sndg->snd->t[0] = sfc_t;
+                current_sndg->snd->surface_dp = sfc_dp;
+                current_sndg->snd->dp[0] = sfc_dp;
+                if(!(sonde_is_error(sfc_u.val) && sonde_is_error(sfc_v.val)))
+                {
+                    SondeUVMps sfc_uvw = { .u = sfc_u.val, .v = sfc_v.val };
+                    SondeSpdDirKts sfc_spd_dir = sonde_uv_to_spd_dir(sfc_uvw);
+                    current_sndg->snd->wind[0] = sfc_spd_dir;
+                }
+            }
+            
+            sfc_pres = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA);
+            sfc_t = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+            sfc_dp = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
+            sfc_u = SondeErrorWrap(SondeMps, SONDE_ERROR_MISSING_DATA);
+            sfc_v = SondeErrorWrap(SondeMps, SONDE_ERROR_MISSING_DATA);
+        }
+
+        ElkStrSplitPair p2 = elk_str_split_on_char(remaining, ' ');
+        ElkStrSplitPair p3 = elk_str_split_on_char(remaining, '\n');
+        pair = (p2.left.len > 0 && p2.left.len <= p3.left.len) ? p2 : p3;
+        token = elk_str_strip(pair.left);
+        remaining = elk_str_strip(pair.right);
+    }
+    Assert(remaining.len == 0);
 
 RETURN:
 
