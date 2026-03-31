@@ -265,6 +265,8 @@ typedef struct SondeSoundingList
 } SondeSoundingList;
 
 SondeSoundingList *sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_description);
+void sonde_sounding_fill_in_profiles(SondeSounding *snd, SondeProfileCode pcodes);            // TODO
+void sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, SondeProfileCode pcodes); // TODO
 
 /***************************************************************************************************************************
  *                                                      Implementations
@@ -1002,6 +1004,8 @@ typedef enum
     SBPC_HGT,      /* Geopotential height, meters                                    */
     SBPC_UW,       /* U-wind component, meters per second                            */
     SBPC_VW,       /* V-wind component, meters per second                            */
+
+    // TODO: Add and parse more surface features including mslp and precip_1hr
 } InternalSondeBufkitProfileColumns;
 
 b32
@@ -1433,6 +1437,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         /* Store the data once we've parsed all columns */
         if(next_token_num % n_cols == 0)
         {
+            /* Match the valid time of the surface data and the soundings. Should ALWAYS be in order. */
             while(current_sndg && current_sndg->valid_time < valid_time)
             {
                 current_sndg = current_sndg->next;
@@ -1451,6 +1456,22 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                     SondeUVMps sfc_uvw = { .u = sfc_u.val, .v = sfc_v.val };
                     SondeSpdDirKts sfc_spd_dir = sonde_uv_to_spd_dir(sfc_uvw);
                     current_sndg->snd->wind[0] = sfc_spd_dir;
+                }
+
+                /* Fill surface values for profiles that don't specifically have the values listed. */
+                if(sonde_profile_code_present(current_sndg->snd->profiles, SONDE_PC_WET_BULB))
+                {
+                    current_sndg->snd->wb[0] = sonde_wet_bulb(sfc_t, sfc_dp, sfc_pres);
+                }
+
+                if(sonde_profile_code_present(current_sndg->snd->profiles, SONDE_PC_THETA))
+                {
+                    current_sndg->snd->theta[0] = sonde_potential_temperature(sfc_pres, sfc_t);
+                }
+
+                if(sonde_profile_code_present(current_sndg->snd->profiles, SONDE_PC_THETA_E))
+                {
+                    current_sndg->snd->theta_e[0] = sonde_equivalent_potential_temperature(sfc_t, sfc_dp, sfc_pres);
                 }
             }
             
