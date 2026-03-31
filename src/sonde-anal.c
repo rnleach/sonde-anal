@@ -209,6 +209,9 @@ typedef enum
     SONDE_PC_PVV                 = (UINT32_C(1) <<  7), /* Pressure vertical velocity        */
     SONDE_PC_GEOPOTENTIAL_HGT    = (UINT32_C(1) <<  8),
     SONDE_PC_CLOUD_FRACTION      = (UINT32_C(1) <<  9),
+    // TODO: add RH
+    // TODO: add RH ice
+    // TODO: add Frost point
 
     /* These two are mutually exclusive. */
     SONDE_PC_WIND_SPEED_DIR      = (UINT32_C(1) << 10),
@@ -247,6 +250,9 @@ typedef struct
     SondeHectopascalPerSecond *pvv;  /* Pressure Vertical Velocity                                                        */
     SondeMeter *hgt;                 /* Geopotential Height                                                               */
     f64 *cloud_fraction;             /* Cloud fraction                                                                    */
+    // TODO: add RH
+    // TODO: add RH ice
+    // TODO: add Frost point
     union
     {
         SondeSpdDirKts *wind;        /* Wind speed and direction                                                          */
@@ -1493,5 +1499,55 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
 RETURN:
 
     return sndgs;
+}
+
+void 
+sonde_sounding_fill_in_profiles(SondeSounding *snd, SondeProfileCode pcodes)
+{
+    /* These profiles are required, so turn them off. */
+    // TODO: Once RH is added, dew point will not be required, and add the potential to calculate it!
+    pcodes &= ~(SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_DEW_POINT | SONDE_PC_GEOPOTENTIAL_HGT);
+
+    if(sonde_profile_code_present(pcodes, SONDE_PC_WET_BULB) && !sonde_profile_code_present(snd->profiles, SONDE_PC_WET_BULB))
+    {
+        // TODO: add wet bulb profile
+    }
+    pcodes &= ~SONDE_PC_WET_BULB;
+
+    if(sonde_profile_code_present(pcodes, SONDE_PC_VIRTUAL_TEMPERATURE) && !sonde_profile_code_present(snd->profiles, SONDE_PC_VIRTUAL_TEMPERATURE))
+    {
+        // TODO: add virtual temperature profile
+    }
+    pcodes &= ~SONDE_PC_VIRTUAL_TEMPERATURE;
+
+    if(sonde_profile_code_present(pcodes, SONDE_PC_THETA) && !sonde_profile_code_present(snd->profiles, SONDE_PC_THETA))
+    {
+        // TODO: add potential temperature profile
+    }
+    pcodes &= ~SONDE_PC_THETA;
+
+    if(sonde_profile_code_present(pcodes, SONDE_PC_THETA_E) && !sonde_profile_code_present(snd->profiles, SONDE_PC_THETA_E))
+    {
+        // TODO: add equivalent potential temperature profile
+    }
+    pcodes &= ~SONDE_PC_THETA_E;
+
+    // TODO: add RH
+    // TODO: add RH ice
+    // TODO: add Frost point
+
+    /* Check to make sure we got everything. */
+    Assert(pcodes == 0);
+}
+
+void 
+sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, SondeProfileCode pcodes)
+{
+    SondeSoundingList *current = sndgs;
+    while(current)
+    {
+        sonde_sounding_fill_in_profiles(current->snd, pcodes);
+        current = current->next;
+    }
 }
 
