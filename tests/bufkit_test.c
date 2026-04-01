@@ -11,7 +11,18 @@ bufkit_load_data_namm_test(void)
 
     ElkStr namm = eco_file_slurp_text(fname, alloc);
 
-    /* SondeSoundingList *sndgs = */ sonde_sounding_from_bufkit_str(alloc, namm, fn_str);
+    SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(alloc, namm, fn_str);
+    sonde_sounding_list_fill_in_profiles(
+            sndgs,
+            SONDE_PC_DEW_POINT
+                | SONDE_PC_WET_BULB
+                | SONDE_PC_VIRTUAL_TEMPERATURE 
+                | SONDE_PC_THETA
+                | SONDE_PC_THETA_E 
+                | SONDE_PC_RH 
+                | SONDE_PC_RH_ICE 
+                | SONDE_PC_FROST_POINT
+        );
 
     eco_arena_destroy(alloc);
 }
@@ -26,7 +37,18 @@ bufkit_load_data_gfs_test(void)
 
     ElkStr gfs = eco_file_slurp_text(fname, alloc);
 
-    /* SondeSoundingList *sndgs = */ sonde_sounding_from_bufkit_str(alloc, gfs, fn_str);
+    SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(alloc, gfs, fn_str);
+    sonde_sounding_list_fill_in_profiles(
+            sndgs,
+            SONDE_PC_DEW_POINT
+                | SONDE_PC_WET_BULB
+                | SONDE_PC_VIRTUAL_TEMPERATURE 
+                | SONDE_PC_THETA
+                | SONDE_PC_THETA_E 
+                | SONDE_PC_RH 
+                | SONDE_PC_RH_ICE 
+                | SONDE_PC_FROST_POINT
+        );
 
     eco_arena_destroy(alloc);
 }

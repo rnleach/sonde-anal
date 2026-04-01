@@ -36,6 +36,7 @@ char const *sonde_error_msg_from_code(SondeError err);
 char const *sonde_error_msg_from_value(f64 val);
 
 #define SondeErrorWrap(type, code) (type){ .val = sonde_error_create_nan(code) }
+#define SondeIsError(value) sonde_is_error(value.val)
 
 /***************************************************************************************************************************
  *                                               Units of Measurement
@@ -209,13 +210,13 @@ typedef enum
     SONDE_PC_PVV                 = (UINT32_C(1) <<  7), /* Pressure vertical velocity        */
     SONDE_PC_GEOPOTENTIAL_HGT    = (UINT32_C(1) <<  8),
     SONDE_PC_CLOUD_FRACTION      = (UINT32_C(1) <<  9),
-    // TODO: add RH
-    // TODO: add RH ice
-    // TODO: add Frost point
+    SONDE_PC_RH                  = (UINT32_C(1) << 10),
+    SONDE_PC_RH_ICE              = (UINT32_C(1) << 11),
+    SONDE_PC_FROST_POINT         = (UINT32_C(1) << 12),
 
     /* These two are mutually exclusive. */
-    SONDE_PC_WIND_SPEED_DIR      = (UINT32_C(1) << 10),
-    SONDE_PC_WIND_UV             = (UINT32_C(1) << 11)
+    SONDE_PC_WIND_SPEED_DIR      = (UINT32_C(1) << 13),
+    SONDE_PC_WIND_UV             = (UINT32_C(1) << 14)
 } SondeProfileCode;
 
 b32 sonde_profile_code_present(u32 profiles, SondeProfileCode code);
@@ -250,9 +251,9 @@ typedef struct
     SondeHectopascalPerSecond *pvv;  /* Pressure Vertical Velocity                                                        */
     SondeMeter *hgt;                 /* Geopotential Height                                                               */
     f64 *cloud_fraction;             /* Cloud fraction                                                                    */
-    // TODO: add RH
-    // TODO: add RH ice
-    // TODO: add Frost point
+    f64 *rh;                         /* Relative humidity for liquid water                                                */
+    f64 *rh_ice;                     /* Relative humidity for ice                                                         */
+    SondeCelsius *fp;                /* Frost Point                                                                       */
     union
     {
         SondeSpdDirKts *wind;        /* Wind speed and direction                                                          */
@@ -271,8 +272,8 @@ typedef struct SondeSoundingList
 } SondeSoundingList;
 
 SondeSoundingList *sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_description);
-void sonde_sounding_fill_in_profiles(SondeSounding *snd, SondeProfileCode pcodes);            // TODO
-void sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, SondeProfileCode pcodes); // TODO
+void sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes);
+void sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes); 
 
 /***************************************************************************************************************************
  *                                                      Implementations
@@ -970,6 +971,9 @@ sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
     snd->pvv =            mag_allocator_nmalloc(alloc, capacity, SondeHectopascalPerSecond); Assert(snd->pvv);
     snd->hgt =            mag_allocator_nmalloc(alloc, capacity, SondeMeter);                Assert(snd->hgt);
     snd->cloud_fraction = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->cloud_fraction);
+    snd->rh             = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->rh);
+    snd->rh_ice         = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->rh_ice);
+    snd->fp =             mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->fp);
     snd->uv_wind =        mag_allocator_nmalloc(alloc, capacity, SondeUVMps);                Assert(snd->uv_wind);
 
     /* Initialize all the profile data to missing values */
@@ -985,6 +989,9 @@ sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
         snd->pvv[i] = SondeErrorWrap(SondeHectopascalPerSecond, SONDE_ERROR_MISSING_DATA); 
         snd->hgt[i] = SondeErrorWrap(SondeMeter, SONDE_ERROR_MISSING_DATA); 
         snd->cloud_fraction[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
+        snd->rh[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
+        snd->rh_ice[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
+        snd->fp[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
         snd->uv_wind[i] = (SondeUVMps)
             {
                 .u = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA),
@@ -1502,46 +1509,286 @@ RETURN:
 }
 
 void 
-sonde_sounding_fill_in_profiles(SondeSounding *snd, SondeProfileCode pcodes)
+sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
 {
-    /* These profiles are required, so turn them off. */
-    // TODO: Once RH is added, dew point will not be required, and add the potential to calculate it!
-    pcodes &= ~(SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_DEW_POINT | SONDE_PC_GEOPOTENTIAL_HGT);
+    /* These profiles are always required, so turn them off, but error check first in debug mode. */
+    Assert(!(pcodes & (SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_GEOPOTENTIAL_HGT)));
+    pcodes &= ~(SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_GEOPOTENTIAL_HGT);
 
-    if(sonde_profile_code_present(pcodes, SONDE_PC_WET_BULB) && !sonde_profile_code_present(snd->profiles, SONDE_PC_WET_BULB))
+    /* These profiles are incalcuable, so for them off too, but error check first in debug mode. */
+    Assert(!(pcodes & (SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION)));
+    pcodes &= ~(SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION);
+
+    /* These profiles are incalcuable for now, FIXME: Treat UV Wind and SPD DIR as distinct columns. */
+    Assert(!(pcodes & (SONDE_PC_WIND_SPEED_DIR | SONDE_PC_WIND_UV)));
+    pcodes &= ~(SONDE_PC_WIND_SPEED_DIR | SONDE_PC_WIND_UV);
+
+    SondeProfileCode all_codes[] = 
+        {
+            SONDE_PC_DEW_POINT, SONDE_PC_WET_BULB, SONDE_PC_VIRTUAL_TEMPERATURE, SONDE_PC_THETA,
+            SONDE_PC_THETA_E, SONDE_PC_RH, SONDE_PC_RH_ICE, SONDE_PC_FROST_POINT
+            // FIXME: At some point treat UV and SpdDir as distinct columns, and add them here!
+        };
+
+    size const n_levels = pak_len(&snd->levels);
+
+    while(pcodes != 0)
     {
-        // TODO: add wet bulb profile
-    }
-    pcodes &= ~SONDE_PC_WET_BULB;
+        /* Circular dependencies are possible, so we have to keep track of progress, and if we stop making progress,
+         * then we've run into a circular dependency and should give up.
+         */
+        SondeProfileCode prev = pcodes;
 
-    if(sonde_profile_code_present(pcodes, SONDE_PC_VIRTUAL_TEMPERATURE) && !sonde_profile_code_present(snd->profiles, SONDE_PC_VIRTUAL_TEMPERATURE))
-    {
-        // TODO: add virtual temperature profile
-    }
-    pcodes &= ~SONDE_PC_VIRTUAL_TEMPERATURE;
+        /* Try each one in turn */
+        for(i32 idx = 0; idx < ECO_ARRAY_SIZE(all_codes); ++idx)
+        {
+            SondeProfileCode pc = all_codes[idx];
 
-    if(sonde_profile_code_present(pcodes, SONDE_PC_THETA) && !sonde_profile_code_present(snd->profiles, SONDE_PC_THETA))
-    {
-        // TODO: add potential temperature profile
-    }
-    pcodes &= ~SONDE_PC_THETA;
+            if(!sonde_profile_code_present(pcodes, pc)) { continue; } /* Skip ones already done or not requested. */
 
-    if(sonde_profile_code_present(pcodes, SONDE_PC_THETA_E) && !sonde_profile_code_present(snd->profiles, SONDE_PC_THETA_E))
-    {
-        // TODO: add equivalent potential temperature profile
-    }
-    pcodes &= ~SONDE_PC_THETA_E;
+             /* Skip elements already present */
+            if(sonde_profile_code_present(snd->profiles, pc))
+            {
+                pcodes &= ~pc; 
+                continue;
+            }
+            else
+            {
+                switch(pc)
+                {
+                    case SONDE_PC_DEW_POINT:
+                    {
+                        /* Check if prequisites are met - need RH, temperature was already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_RH))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            f64 *rh = snd->rh;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || sonde_is_error(rh[level])))
+                                {
+                                    dp[level] = sonde_dew_point_from_temperature_and_humidity_liquid(t[level], rh[level]);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_DEW_POINT;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_DEW_POINT);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_RH);
+                        }
+                    } break;
 
-    // TODO: add RH
-    // TODO: add RH ice
-    // TODO: add Frost point
+                    case SONDE_PC_WET_BULB:
+                    {
+                        /* Check if prequisites are met - need dew point, temperature and pressure were already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_DEW_POINT))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            SondeCelsius *wb = snd->wb;
+                            SondeHectopascal *p = snd->p;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || SondeIsError(dp[level]) || SondeIsError(p[level])))
+                                {
+                                    wb[level] = sonde_wet_bulb(t[level], dp[level], p[level]);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_WET_BULB;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_WET_BULB);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
+                        }
+                    } break;
+
+                    case SONDE_PC_VIRTUAL_TEMPERATURE:
+                    {
+                        /* Check if prequisites are met - need dew point, temperature pressure were already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_DEW_POINT))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            SondeCelsius *vt = snd->vt;
+                            SondeHectopascal *p = snd->p;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || SondeIsError(dp[level]) || SondeIsError(p[level])))
+                                {
+                                    vt[level] = sonde_virtual_temperature(t[level], dp[level], p[level]);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_VIRTUAL_TEMPERATURE;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_VIRTUAL_TEMPERATURE);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
+                        }
+                    } break;
+
+                    case SONDE_PC_THETA:
+                    {
+                        /* All prerequisites checked above. pressure and temperature */
+                        SondeCelsius *t = snd->t;
+                        SondeHectopascal *p = snd->p;
+                        SondeKelvin *theta = snd->theta;
+                        for(size level = 0; level < n_levels; ++level)
+                        {
+                            if(!(SondeIsError(t[level]) || SondeIsError(p[level])))
+                            {
+                                theta[level] = sonde_potential_temperature(p[level], t[level]);
+                            }
+                        }
+                        /* Track what columns have been calculated. */
+                        pcodes &= ~SONDE_PC_THETA;
+                        snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_THETA);
+                    } break;
+
+                    case SONDE_PC_THETA_E:
+                    {
+                        /* Check if prequisites are met - need dew point, temperature pressure were already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_DEW_POINT))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            SondeHectopascal *p = snd->p;
+                            SondeKelvin *theta_e = snd->theta_e;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || SondeIsError(dp[level]) || SondeIsError(p[level])))
+                                {
+                                    theta_e[level] = sonde_equivalent_potential_temperature(t[level], dp[level], p[level]);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_THETA_E;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_THETA_E);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
+                        }
+                    } break;
+
+                    case SONDE_PC_RH:
+                    {
+                        /* Check if prequisites are met - need dew point, temperature was already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_DEW_POINT))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            f64 *rh = snd->rh;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || SondeIsError(dp[level])))
+                                {
+                                    rh[level] = sonde_relative_humidity_liquid(t[level], dp[level]);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_RH;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_RH);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
+                        }
+                    } break;
+
+                    case SONDE_PC_RH_ICE:
+                    {
+                        /* Check if prequisites are met - need frost point, temperature was already required. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_FROST_POINT))
+                        {
+                            SondeCelsius *t = snd->t;
+                            SondeCelsius *dp = snd->dp;
+                            SondeHectopascal *p = snd->p;
+                            f64 *rh_ice = snd->rh_ice;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(SondeIsError(t[level]) || SondeIsError(dp[level]) || SondeIsError(p[level])))
+                                {
+                                    SondeHectopascal vp = sonde_vapor_pressure_water(dp[level]);
+                                    SondeHectopascal sp = sonde_vapor_pressure_ice(t[level]);
+                                    rh_ice[level] = SondeIsError(vp) ? vp.val : SondeIsError(sp) ? sp.val : vp.val / sp.val;
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_RH_ICE;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_RH_ICE);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_FROST_POINT);
+                        }
+                    } break;
+
+                    case SONDE_PC_FROST_POINT:
+                    {
+                        /* Check if prequisites are met - need dew point. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_DEW_POINT))
+                        {
+                            SondeCelsius *dp = snd->dp;
+                            SondeCelsius *fp = snd->fp;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!SondeIsError(dp[level]))
+                                {
+                                    SondeHectopascal vp = sonde_vapor_pressure_water(dp[level]);
+                                    fp[level] = sonde_frost_point_from_vapor_pressure_over_ice(vp);
+                                }
+                            }
+                            /* Track what columns have been calculated. */
+                            pcodes &= ~SONDE_PC_FROST_POINT;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_FROST_POINT);
+                        }
+                        else
+                        {
+                            pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
+                        }
+                    } break;
+
+#if 0               // FIXME: Get these added in!
+                    case SONDE_PC_WIND_UV:
+                    {
+                        /* Check if prequisites are met - need wind speed/dir. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_WIND_SPEED_DIR))
+                        {
+                            // TODO: Calculate u-v wind column
+                        }
+                    } break;
+
+                    case SONDE_PC_WIND_SPEED_DIR:
+                    {
+                        /* Check if prequisites are met - need wind uv. */
+                        if(sonde_profile_code_present(snd->profiles, SONDE_PC_WIND_UV))
+                        {
+                            // TODO: Calculate spd/dir wind column
+                        }
+                    } break;
+#endif
+                    default: { Panic(); /* unreachable */ } break;
+                }
+            }
+        }
+
+        /* Check to make sure we made progress, if not, we're stuck, go no further. */
+        if(pcodes == prev) { break; }
+    }
 
     /* Check to make sure we got everything. */
     Assert(pcodes == 0);
 }
 
 void 
-sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, SondeProfileCode pcodes)
+sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes)
 {
     SondeSoundingList *current = sndgs;
     while(current)
