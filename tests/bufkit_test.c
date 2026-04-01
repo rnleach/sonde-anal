@@ -22,6 +22,8 @@ bufkit_load_data_namm_test(void)
                 | SONDE_PC_RH 
                 | SONDE_PC_RH_ICE 
                 | SONDE_PC_FROST_POINT
+                | SONDE_PC_WIND_UV
+                | SONDE_PC_WIND_SPEED_DIR
         );
 
     eco_arena_destroy(alloc);
@@ -48,6 +50,8 @@ bufkit_load_data_gfs_test(void)
                 | SONDE_PC_RH 
                 | SONDE_PC_RH_ICE 
                 | SONDE_PC_FROST_POINT
+                | SONDE_PC_WIND_UV
+                | SONDE_PC_WIND_SPEED_DIR
         );
 
     eco_arena_destroy(alloc);

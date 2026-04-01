@@ -213,14 +213,12 @@ typedef enum
     SONDE_PC_RH                  = (UINT32_C(1) << 10),
     SONDE_PC_RH_ICE              = (UINT32_C(1) << 11),
     SONDE_PC_FROST_POINT         = (UINT32_C(1) << 12),
-
-    /* These two are mutually exclusive. */
     SONDE_PC_WIND_SPEED_DIR      = (UINT32_C(1) << 13),
     SONDE_PC_WIND_UV             = (UINT32_C(1) << 14)
 } SondeProfileCode;
 
-b32 sonde_profile_code_present(u32 profiles, SondeProfileCode code);
-u32 sonde_profile_code_set(u32 profiles, SondeProfileCode code);
+b32 sonde_profile_code_present(u32 profiles, SondeProfileCode code) { return !!(profiles & code); }
+u32 sonde_profile_code_set(u32 profiles, SondeProfileCode code)     { return    profiles | code;  }
 
 typedef struct
 {
@@ -254,11 +252,8 @@ typedef struct
     f64 *rh;                         /* Relative humidity for liquid water                                                */
     f64 *rh_ice;                     /* Relative humidity for ice                                                         */
     SondeCelsius *fp;                /* Frost Point                                                                       */
-    union
-    {
-        SondeSpdDirKts *wind;        /* Wind speed and direction                                                          */
-        SondeUVMps *uv_wind;         /* Wind U (west to east) and V (south to north) components                           */
-    };
+    SondeSpdDirKts *wind;            /* Wind speed and direction                                                          */
+    SondeUVMps *uv_wind;             /* Wind U (west to east) and V (south to north) components                           */
 } SondeSounding;
 
 SondeSounding *sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity);    /* Capacity is max number of levels. */
@@ -928,25 +923,6 @@ sonde_pft(SondeMeter zfc,
     return (SondeGw){ .val = PFT_CONST * density * z_fc_km * z_fc_km * mean_wind.val * theta_diff.val / 1000.0 };
 }
 
-b32 
-sonde_profile_code_present(u32 profiles, SondeProfileCode code)
-{
-    return !!(profiles & code);
-}
-
-u32 
-sonde_profile_code_set(u32 profiles, SondeProfileCode code)
-{
-    switch(code)
-    {
-        /* For mutually exclusive flags, make sure the other flag is turned off. */
-    case SONDE_PC_WIND_SPEED_DIR:  return (profiles & ~SONDE_PC_WIND_UV) | SONDE_PC_WIND_SPEED_DIR;
-    case SONDE_PC_WIND_UV:         return (profiles & ~SONDE_PC_WIND_SPEED_DIR) | SONDE_PC_WIND_UV;
-
-    default:                       return profiles | code;
-    };
-}
-
 SondeSounding *
 sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
 {
@@ -974,6 +950,7 @@ sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
     snd->rh             = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->rh);
     snd->rh_ice         = mag_allocator_nmalloc(alloc, capacity, f64);                       Assert(snd->rh_ice);
     snd->fp =             mag_allocator_nmalloc(alloc, capacity, SondeCelsius);              Assert(snd->fp);
+    snd->wind =           mag_allocator_nmalloc(alloc, capacity, SondeSpdDirKts);            Assert(snd->wind);
     snd->uv_wind =        mag_allocator_nmalloc(alloc, capacity, SondeUVMps);                Assert(snd->uv_wind);
 
     /* Initialize all the profile data to missing values */
@@ -992,6 +969,11 @@ sonde_sounding_alloc_and_init(MagAllocator *alloc, size capacity)
         snd->rh[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
         snd->rh_ice[i] = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA); 
         snd->fp[i] = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA); 
+        snd->wind[i] = (SondeSpdDirKts)
+            {
+                .spd = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA),
+                .dir = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA),
+            };
         snd->uv_wind[i] = (SondeUVMps)
             {
                 .u = sonde_error_create_nan(SONDE_ERROR_MISSING_DATA),
@@ -1519,15 +1501,10 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
     Assert(!(pcodes & (SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION)));
     pcodes &= ~(SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION);
 
-    /* These profiles are incalcuable for now, FIXME: Treat UV Wind and SPD DIR as distinct columns. */
-    Assert(!(pcodes & (SONDE_PC_WIND_SPEED_DIR | SONDE_PC_WIND_UV)));
-    pcodes &= ~(SONDE_PC_WIND_SPEED_DIR | SONDE_PC_WIND_UV);
-
     SondeProfileCode all_codes[] = 
         {
-            SONDE_PC_DEW_POINT, SONDE_PC_WET_BULB, SONDE_PC_VIRTUAL_TEMPERATURE, SONDE_PC_THETA,
-            SONDE_PC_THETA_E, SONDE_PC_RH, SONDE_PC_RH_ICE, SONDE_PC_FROST_POINT
-            // FIXME: At some point treat UV and SpdDir as distinct columns, and add them here!
+            SONDE_PC_DEW_POINT, SONDE_PC_WET_BULB, SONDE_PC_VIRTUAL_TEMPERATURE, SONDE_PC_THETA, SONDE_PC_THETA_E,
+            SONDE_PC_RH, SONDE_PC_RH_ICE, SONDE_PC_FROST_POINT, SONDE_PC_WIND_UV, SONDE_PC_WIND_SPEED_DIR
         };
 
     size const n_levels = pak_len(&snd->levels);
@@ -1755,13 +1732,22 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                     } break;
 
-#if 0               // FIXME: Get these added in!
                     case SONDE_PC_WIND_UV:
                     {
                         /* Check if prequisites are met - need wind speed/dir. */
                         if(sonde_profile_code_present(snd->profiles, SONDE_PC_WIND_SPEED_DIR))
                         {
-                            // TODO: Calculate u-v wind column
+                            SondeSpdDirKts *wind = snd->wind;
+                            SondeUVMps *uv_wind = snd->uv_wind;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(sonde_is_error(wind[level].spd) || sonde_is_error(wind[level].dir)))
+                                {
+                                    uv_wind[level] = sonde_spd_dir_to_uv(wind[level]);
+                                }
+                            }
+                            pcodes &= ~SONDE_PC_WIND_UV;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_WIND_UV);
                         }
                     } break;
 
@@ -1770,10 +1756,19 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         /* Check if prequisites are met - need wind uv. */
                         if(sonde_profile_code_present(snd->profiles, SONDE_PC_WIND_UV))
                         {
-                            // TODO: Calculate spd/dir wind column
+                            SondeSpdDirKts *wind = snd->wind;
+                            SondeUVMps *uv_wind = snd->uv_wind;
+                            for(size level = 0; level < n_levels; ++level)
+                            {
+                                if(!(sonde_is_error(uv_wind[level].u) || sonde_is_error(uv_wind[level].v)))
+                                {
+                                    wind[level] = sonde_uv_to_spd_dir(uv_wind[level]);
+                                }
+                            }
+                            pcodes &= ~SONDE_PC_WIND_SPEED_DIR;
+                            snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_WIND_SPEED_DIR);
                         }
                     } break;
-#endif
                     default: { Panic(); /* unreachable */ } break;
                 }
             }
