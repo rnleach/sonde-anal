@@ -1,5 +1,13 @@
 # Project related temporary or test files
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
 main_test
+sonde2
 
 # Editor, IDE, and coding tools
 *.vim
@@ -49,14 +57,6 @@ build/build
 *.so
 *.so.*
 *.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
 
 # Debug files
 *.dSYM/
