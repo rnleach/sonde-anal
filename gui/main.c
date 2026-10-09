@@ -24,6 +24,89 @@
 
 typedef struct
 {
+    union
+    {
+        struct
+        {
+            f32 c0r0; f32 c1r0; f32 c2r0;
+            f32 c0r1; f32 c1r1; f32 c2r1;
+            f32 c0r2; f32 c1r2; f32 c2r2;
+        };
+
+        f32 vals[9];
+    };
+} SMatrix;
+
+typedef struct
+{
+    union
+    {
+        struct
+        {
+            f32 x; f32 y; f32 w;
+        };
+
+        f32 val[3];
+    };
+} Vector;
+
+Vector 
+matrix_prod_vector(SMatrix const *m, Vector const *v)
+{
+    Vector res = {0};
+    res.x = m->c0r0 * v->x + m->c1r0 * v->y + m->c2r0 * v->w;
+    res.y = m->c0r1 * v->x + m->c1r1 * v->y + m->c2r1 * v->w;
+    res.w = m->c0r2 * v->x + m->c1r2 * v->y + m->c2r2 * v->w;
+    return res;
+}
+
+SMatrix 
+matrix_prod_matrix(SMatrix const *a, SMatrix const *b)
+{
+    SMatrix res = {0};
+    res.c0r0 = b->c0r0 * a->c0r0 + b->c0r1 * a->c1r0 + b->c0r2 * a->c2r0;
+    res.c0r1 = b->c0r0 * a->c0r1 + b->c0r1 * a->c1r1 + b->c0r2 * a->c2r1;
+    res.c0r2 = b->c0r0 * a->c0r2 + b->c0r1 * a->c1r2 + b->c0r2 * a->c2r2;
+
+    res.c1r0 = b->c1r0 * a->c0r0 + b->c1r1 * a->c1r0 + b->c1r2 * a->c2r0;
+    res.c1r1 = b->c1r0 * a->c0r1 + b->c1r1 * a->c1r1 + b->c1r2 * a->c2r1;
+    res.c1r2 = b->c1r0 * a->c0r2 + b->c1r1 * a->c1r2 + b->c1r2 * a->c2r2;
+
+    res.c2r0 = b->c2r0 * a->c0r0 + b->c2r1 * a->c1r0 + b->c2r2 * a->c2r0;
+    res.c2r1 = b->c2r0 * a->c0r1 + b->c2r1 * a->c1r1 + b->c2r2 * a->c2r1;
+    res.c2r2 = b->c2r0 * a->c0r2 + b->c2r1 * a->c1r2 + b->c2r2 * a->c2r2;
+
+    return res;
+}
+
+SMatrix 
+matrix_invert(SMatrix const *a)
+{
+    SMatrix res = {0};
+
+    f32 det = a->vals[0] * (a->vals[4] * a->vals[8] - a->vals[5] * a->vals[7])
+            - a->vals[1] * (a->vals[3] * a->vals[8] - a->vals[5] * a->vals[6])
+            + a->vals[2] * (a->vals[3] * a->vals[7] - a->vals[4] * a->vals[6]);
+
+    f32 inv_det = 1.0f / det;
+
+    res.vals[0] = (a->vals[4] * a->vals[8] - a->vals[5] * a->vals[7]) * inv_det;
+    res.vals[1] = (a->vals[2] * a->vals[7] - a->vals[1] * a->vals[8]) * inv_det;
+    res.vals[2] = (a->vals[1] * a->vals[5] - a->vals[2] * a->vals[4]) * inv_det;
+
+    res.vals[3] = (a->vals[5] * a->vals[6] - a->vals[3] * a->vals[8]) * inv_det;
+    res.vals[4] = (a->vals[0] * a->vals[8] - a->vals[2] * a->vals[6]) * inv_det;
+    res.vals[5] = (a->vals[2] * a->vals[3] - a->vals[0] * a->vals[5]) * inv_det;
+
+    res.vals[6] = (a->vals[3] * a->vals[7] - a->vals[4] * a->vals[6]) * inv_det;
+    res.vals[7] = (a->vals[1] * a->vals[6] - a->vals[0] * a->vals[7]) * inv_det;
+    res.vals[8] = (a->vals[0] * a->vals[4] - a->vals[1] * a->vals[3]) * inv_det;
+
+    return res;
+}
+
+typedef struct
+{
     /* Window Data */
     i32 screenWidth;
     i32 screenHeight;
@@ -57,11 +140,25 @@ typedef struct
     f32 nextButtonWidth;
     f32 lastButtonX;
     f32 lastButtonWidth;
+
+    /* Left Pane Graphics */
+    SMatrix lp_dm;        /* Display Matrix                             */
+    SMatrix lp_zm;        /* Zoom Matrix                                */
+    SMatrix lp_tm;        /* Translation Matrix                         */
+    SMatrix lp_sm;        /* Skew transformation for the skew-t         */
+    SMatrix lp_mm;        /* Model Matrix                               */
+    SMatrix lp_trans;     /* Full transform for the left panel          */
+    SMatrix lp_inv_trans; /* Full inverse transform for the left panel  */
+
+    /* General UI */
+    f32 zoom;                   /* Zoom factor                          */
+
 } RendererState;
 
 typedef struct
 {
-    u32 backgroundColorIdx;
+    SondeCelsius sample_t;      /* Temperature under cursor             */
+    SondeHectopascal sample_p;  /* Pressure under cursor                */
 } DataModel;
 
 typedef struct 
@@ -71,40 +168,305 @@ typedef struct
     DataModel data_model;
 } ProgramState;
 
-void process_input(ProgramState *state);     /* Captures input and processes it before any changes to the program state  */
-void update_gui_state(ProgramState *state);  /* Handles window resizes and changes to other semi-permanent program state */
-void draw_left_pane(ProgramState *state);
-void draw_right_pane(ProgramState *state);
-void draw_button_bar(ProgramState *state);
+SondeCelsius Tmin = { .val = -60.0 };
+SondeCelsius Tmax = { .val =  60.0 };
+f32 Trange;
 
+SondeHectopascal Pmin = { .val =  100.0 };
+SondeHectopascal Pmax = { .val = 1100.0 };
+f32 Prange;
+
+#define BUTTON_HORIZONTAL_PADDING 5.0f
 
 int
 main(void)
 {
     /* Initialization -----------------------------------------------------------------------------------------------------*/
-    i32 const screenWidth = 800;
-    i32 const screenHeight = 450;
+    Trange = (f32)(Tmax.val - Tmin.val);
+    Prange = (f32)(log(Pmax.val) - log(Pmin.val));
+
+    i32 const screenWidth = 1240;
+    i32 const screenHeight = 650;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI);
     InitWindow(screenWidth, screenHeight, "Sonde2");
 
-    ProgramState state = {0};
+    ProgramState state = 
+        {
+            .renderer = 
+                {
+                    /* Skew matrix - which never changes */
+                    .lp_sm =
+                        {
+                            .c0r0 = 1.0f, .c1r0 = 1.0f, .c2r0 = 1.0f,
+                            .c0r1 = 0.0f, .c1r1 = 1.0f, .c2r1 = 0.0f,
+                            .c0r2 = 0.0f, .c1r2 = 0.0f, .c2r2 = 1.0f
+                        },
+
+                    .lp_mm = 
+                        {
+                            .c0r0 = 2.0 / Trange, .c1r0 =           0.0, .c2r0 =     (-2.0 * Tmin.val / Trange) - 1.0,
+                            .c0r1 =          0.0, .c1r1 = -2.0 / Prange, .c2r1 = (2.0 * log(Pmin.val) / Prange) + 1.0,
+                            .c0r2 =          0.0, .c1r2 =           0.0, .c2r2 =                                  1.0 
+                        }
+                }
+        };
+
+    RendererState *r = &state.renderer;
+    DataModel *model = &state.data_model;
+    Layout *l = &state.layout;
+
+    /* Set up font */
+    l->fontSize  = l->fontSize ? l->fontSize : 18;
+    r->font = LoadFontEx("resources/FiraSans-Bold.otf", l->fontSize, 0, 0);
+    SetTextLineSpacing(3 * l->fontSize / 4);
+    GuiSetFont(r->font);
+    r->textHeight = MeasureTextEx(r->font, "gÅ", (f32)l->fontSize, (f32)(l->fontSize / 4)).y;
+
+    /* Layout the top row of buttons. */
+    r->buttonHeight = 1.4f * r->textHeight;
+    r->buttonRowY = 0.0f;
+
+    r->openButtonWidth      = (f32)MeasureText("#1#Open",         l->fontSize);
+    r->saveImageButtonWidth = (f32)MeasureText("#184#Save Image", l->fontSize);
+    r->firstButtonWidth     = (f32)MeasureText("#129#First",      l->fontSize);
+    r->previousButtonWidth  = (f32)MeasureText("#118#Previous",   l->fontSize);
+    r->nextButtonWidth      = (f32)MeasureText("#119#PNext",      l->fontSize);
+    r->lastButtonWidth      = (f32)MeasureText("#134#Last",       l->fontSize);
+
+    /* Layout buttons that flow from the left. */
+    r->openButtonX = BUTTON_HORIZONTAL_PADDING;
+    r->saveImageButtonX = r->openButtonX + r->openButtonWidth + BUTTON_HORIZONTAL_PADDING;
+
+    /* Set up the general renderer state */
+    r->zoom = 1.0;
+
+    /* Set some GUI styles and defaults */
+    GuiSetStyle(DEFAULT, TEXT_SIZE, l->fontSize);
+    GuiSetStyle(BUTTON, BORDER_WIDTH, 0);
+
     if(0) GuiLoadStyleAmber();
     else GuiLoadStyleDark();
-    update_gui_state(&state);
 
     SetTargetFPS(60);
+
+    RenderTexture *left_render_texture = &r->left_pane;
+    RenderTexture *right_render_texture = &r->right_pane;
 
     /* Main Loop ----------------------------------------------------------------------------------------------------------*/
     while(!WindowShouldClose())
     {
-        /* Update ---------------------------------------------------------------------------------------------------------*/
-        process_input(&state);
-        update_gui_state(&state);
+        /* Update Input ---------------------------------------------------------------------------------------------------*/
+
+        /* Get the mouse position. */
+        Vector2 mouse = GetMousePosition();
+
+        Rectangle left_pane = { .x=0.0f, .y=r->buttonHeight, .width=r->splitScreenRect.width, .height=-r->splitScreenRect.height};
+        b32 mouse_in_left_pane = CheckCollisionPointRec( mouse, left_pane);
+
+        if(mouse_in_left_pane)
+        {
+            Vector sample = { .x=mouse.x - left_pane.x, .y=mouse.y - left_pane.y, 1.0f };
+            sample = matrix_prod_vector(&r->lp_inv_trans, &sample);
+            model->sample_t.val = sample.x;
+            model->sample_p.val = exp(sample.y);
+            printf("T=%lfC P=%lfhPa\n", model->sample_t.val, model->sample_p.val);
+        }
+
+        f32 mouse_wheel = GetMouseWheelMove();
+        if(mouse_wheel > 0.0) { r->zoom *= 1.1; }
+        else if(mouse_wheel < 0.0) { r->zoom *= 0.9; }
+        r->zoom = r->zoom <   1.0f ?   1.0f : r->zoom;
+        r->zoom = r->zoom > 100.0f ? 100.0f : r->zoom;
+        // TODO: Handle mouse position when zooming
+
+        // TODO: Update translation and zoom matrices based on input.
+ 
+        /* Handle window resizes */
+        i32 const screenWidth = GetScreenWidth();
+        i32 const screenHeight = GetScreenHeight();
+        f32 const screenWidth_f32 = (f32)screenWidth;
+
+        if(screenWidth != l->screenWidth || screenHeight != l->screenHeight)
+        {
+            /* Calculate the minimum allowable width to hold all the buttons */
+            f32 minWidth = r->openButtonWidth
+                + r->saveImageButtonWidth
+                + r->firstButtonWidth
+                + r->previousButtonWidth
+                + r->nextButtonWidth
+                + r->lastButtonWidth
+                + 5.0f * BUTTON_HORIZONTAL_PADDING;
+
+            l->screenWidth = screenWidth > minWidth ? screenWidth : minWidth;
+            l->screenHeight = screenHeight;
+            UnloadRenderTexture(r->left_pane);
+            UnloadRenderTexture(r->right_pane);
+
+            r->left_pane = LoadRenderTexture(l->screenWidth / 2, l->screenHeight - r->buttonHeight);
+            r->right_pane = LoadRenderTexture(l->screenWidth / 2, l->screenHeight - r->buttonHeight);
+            r->splitScreenRect = (Rectangle){ 0.0f, 0.0f, (f32)r->left_pane.texture.width, (f32)-r->left_pane.texture.height };
+
+            /* Layout buttons that are centered. */
+            f32 centeredButtonsWidth =
+                r->lastButtonWidth
+                + r->nextButtonWidth 
+                + r->previousButtonWidth 
+                + r->firstButtonWidth 
+                + 3.0f * BUTTON_HORIZONTAL_PADDING;
+
+            f32 minCenteredButtonsX = r->saveImageButtonX + r->saveImageButtonWidth + BUTTON_HORIZONTAL_PADDING;
+
+            r->firstButtonX = (screenWidth_f32 - centeredButtonsWidth) / 2.0f;
+            if(r->firstButtonX < minCenteredButtonsX) { r->firstButtonX = minCenteredButtonsX; }
+
+            r->previousButtonX = r->firstButtonX     + r->firstButtonWidth    + BUTTON_HORIZONTAL_PADDING;
+            r->nextButtonX =     r->previousButtonX  + r->previousButtonWidth + BUTTON_HORIZONTAL_PADDING;
+            r->lastButtonX =     r->nextButtonX      + r->nextButtonWidth     + BUTTON_HORIZONTAL_PADDING;
+
+            /* Update the display matrix */
+            f32 const texture_width = (f32)r->left_pane.texture.width;
+            f32 const texture_height = (f32)r->left_pane.texture.height;
+            r->lp_dm.c0r0 = texture_width / 2.0f;
+            r->lp_dm.c1r0 = 0.0;
+            r->lp_dm.c2r0 = texture_width / 2.0f;
+
+            r->lp_dm.c0r1 = 0.0;
+            r->lp_dm.c1r1 = -texture_height / 2.0f;
+            r->lp_dm.c2r1 = texture_height / 2.0f;
+
+            r->lp_dm.c0r2 = 0.0;
+            r->lp_dm.c1r2 = 0.0;
+            r->lp_dm.c2r2 = 1.0;
+
+        }
+
+        /* Update the zoom matrix */
+        f32 const texture_width = (f32)r->left_pane.texture.width;
+        f32 const texture_height = (f32)r->left_pane.texture.height;
+        f32 const aspect_ratio = texture_width / texture_height;
+        r->lp_zm.c1r0 = 0.0;
+        r->lp_zm.c0r1 = 0.0;
+        r->lp_zm.c0r2 = 0.0;
+        r->lp_zm.c1r2 = 0.0;
+        r->lp_zm.c2r2 = 1.0;
+        if(aspect_ratio > 1.0)
+        {
+            r->lp_zm.c0r0 = r->zoom / aspect_ratio;
+            r->lp_zm.c2r0 = (1.0f - r->lp_zm.c0r0) / 2.0f;
+            r->lp_zm.c1r1 = r->zoom;
+            r->lp_zm.c2r1 = 0.0;
+        }
+        else
+        {
+            r->lp_zm.c0r0 = r->zoom;
+            r->lp_zm.c2r0 = 0.0;
+            r->lp_zm.c1r1 = r->zoom * aspect_ratio;
+            r->lp_zm.c2r1 = (1.0f - r->lp_zm.c1r1) / 2.0f;
+        }
+
+        /* Update the translation matrix */
+        r->lp_tm.c0r0 = 1.0;
+        r->lp_tm.c1r0 = 0.0;
+        r->lp_tm.c2r0 = 0.0; /* TODO: add dx here */
+
+        r->lp_tm.c0r1 = 0.0;
+        r->lp_tm.c1r1 = 1.0;
+        r->lp_tm.c2r1 = 0.0; /* TODO: add dy here */
+
+        r->lp_tm.c0r2 = 0.0;
+        r->lp_tm.c1r2 = 0.0;
+        r->lp_tm.c2r2 = 1.0;
+
+        /* Update the full transform for the left pane */
+        r->lp_trans = matrix_prod_matrix(&r->lp_sm, &r->lp_mm);
+        r->lp_trans = matrix_prod_matrix(&r->lp_tm, &r->lp_trans);
+        r->lp_trans = matrix_prod_matrix(&r->lp_zm, &r->lp_trans);
+        r->lp_trans = matrix_prod_matrix(&r->lp_dm, &r->lp_trans);
+        r->lp_inv_trans = matrix_invert(&r->lp_trans);
+
 
         /* Draw -----------------------------------------------------------------------------------------------------------*/
-        draw_left_pane(&state);
-        draw_right_pane(&state);
+
+        /* Draw the Left Pane -------------------------------------------------------------------------------------------- */
+        BeginTextureMode(*left_render_texture);
+
+        {
+#if GRAPHICS_DEBUG
+            Texture *left_texture = &left_render_texture->texture;
+
+            ClearBackground(PINK);
+
+            i32 const width = left_texture->width;
+            i32 const height = left_texture->height;
+
+            Rectangle lrect = {.x = 0, .y = 0, .width = width, .height = height };
+            DrawRectangleLinesEx(lrect, 8.0, GREEN);
+#endif
+
+            ClearBackground(RAYWHITE);
+
+            Color const isotherm_lc = { .r=219, .g= 98, .b= 39, .a=255 }; // TODO: Make isotherm color configurable
+            Color const isobar_lc   = { .r=219, .g= 98, .b= 39, .a=255 }; // TODO: Make isobar color configurable
+            f32 const lw = 1.5f;                                          // TODO: Make the line width configurable
+
+            f32 tmin = -250.0f;
+            f32 tmax = 80.0f;
+
+            /* Draw the pressure lines */
+            f32 pres_levels[8] = { 1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f };
+            for(size p_idx = 0; p_idx < ECO_ARRAY_SIZE(pres_levels); ++p_idx)
+            {
+                f32 lp = logf(pres_levels[p_idx]);
+                Vector start = { .x=tmin, .y=lp, .w=1.0f };
+                Vector end   = { .x=tmax, .y=lp, .w=1.0f };
+
+                start = matrix_prod_vector(&r->lp_trans, &start);
+                end   = matrix_prod_vector(&r->lp_trans, &end);
+
+                DrawLineEx((Vector2){ .x=start.x, .y=start.y }, (Vector2){ .x=end.x, .y=end.y }, lw, isobar_lc);
+            }
+
+            /* Draw temperture lines */
+            f32 lpmax = (f32)log(Pmax.val);
+            f32 lpmin = (f32)log(Pmin.val);
+            for(f32 t = tmin; t <= tmax; t += 10.0f)
+            {
+                Vector start = { .x=t, .y=lpmin, .w=1.0f };
+                Vector end   = { .x=t, .y=lpmax, .w=1.0f };
+
+                start = matrix_prod_vector(&r->lp_trans, &start);
+                end   = matrix_prod_vector(&r->lp_trans, &end);
+
+                Color color = isotherm_lc;
+                f32 line_width = lw;
+
+                if(t > -0.1f && t < 0.1f) { color = BLUE; line_width *= 2.0f; } // TODO: Make this an option
+
+                DrawLineEx((Vector2){ .x=start.x, .y=start.y }, (Vector2){ .x=end.x, .y=end.y }, line_width, color);
+            }
+        }
+
+        EndTextureMode();
+
+        /* Draw the Right Pane ------------------------------------------------------------------------------------------- */
+        BeginTextureMode(*right_render_texture);
+
+        {
+#if GRAPHICS_DEBUG
+            Texture *right_texture = &right_render_texture->texture;
+
+            ClearBackground(GREEN);
+
+            i32 const width = right_texture->width;
+            i32 const height = right_texture->height;
+
+            Rectangle rrect = {.x = 0, .y = 0, .width = width, .height = height };
+            DrawRectangleLinesEx(rrect, 8.0, PINK);
+#endif
+        }
+
+        EndTextureMode();
 
         /* Put everything on the window -----------------------------------------------------------------------------------*/
         BeginDrawing();
@@ -117,7 +479,42 @@ main(void)
 #endif
 
             /* Build Top Row of Buttons */
-            draw_button_bar(&state);
+            if(GuiButton((Rectangle){ .x = r->openButtonX, .y = r->buttonRowY, .width = r->openButtonWidth, .height = r->buttonHeight }, "#1#Open"))
+            {
+                // TODO: Handle File Open
+                TraceLog(LOG_ERROR, "File open button not implemented yet!");
+            }
+
+            if(GuiButton((Rectangle){ .x = r->saveImageButtonX, .y = r->buttonRowY, .width = r->saveImageButtonWidth, .height = r->buttonHeight }, "#184#Save Image"))
+            {
+                // TODO: Handle Save Image 
+                TraceLog(LOG_ERROR, "Save image button not implemented yet!");
+            }
+
+            if(GuiButton((Rectangle){ .x = r->firstButtonX, .y = r->buttonRowY, .width = r->firstButtonWidth, .height = r->buttonHeight }, "#129#First"))
+            {
+                // TODO: Handle First
+                TraceLog(LOG_ERROR, "First button not implemented yet!");
+            }
+
+            if(GuiButton((Rectangle){ .x = r->previousButtonX, .y = r->buttonRowY, .width = r->previousButtonWidth, .height = r->buttonHeight }, "#118#Previous"))
+            {
+                // TODO: Handle Previous
+                TraceLog(LOG_ERROR, "Previous button not implemented yet!");
+            }
+
+            if(GuiButton((Rectangle){ .x = r->nextButtonX, .y = r->buttonRowY, .width = r->nextButtonWidth, .height = r->buttonHeight }, "#119#Next"))
+            {
+                // TODO: Handle Next
+                TraceLog(LOG_ERROR, "Next button not implemented yet!");
+            }
+
+            if(GuiButton((Rectangle){ .x = r->lastButtonX, .y = r->buttonRowY, .width = r->lastButtonWidth, .height = r->buttonHeight }, "#134#Last"))
+            {
+                // TODO: Handle Last
+                TraceLog(LOG_ERROR, "Last button not implemented yet!");
+            }
+
 
             /* Draw in the left pane */
             DrawTextureRec(
@@ -134,6 +531,10 @@ main(void)
                     WHITE);
         }
 
+#if GRAPHICS_DEBUG
+        DrawFPS(10,state.layout.screenHeight - 40);
+#endif
+
         EndDrawing();
     }
 
@@ -143,176 +544,5 @@ main(void)
     return 0;
 }
 
-void 
-process_input(ProgramState *state)
-{
-}
-
-void
-update_gui_state(ProgramState *state)
-{
-#define BUTTON_HORIZONTAL_PADDING 5.0f
-    /* One time set up based off zero initialized struct */
-    if(!state->renderer.font.baseSize)
-    {
-        /* Set up font */
-        state->layout.fontSize  = state->layout.fontSize ? state->layout.fontSize : 18;
-        state->renderer.font = LoadFontEx("resources/FiraSans-Bold.otf", state->layout.fontSize, 0, 0);
-        SetTextLineSpacing(3 * state->layout.fontSize / 4);
-        GuiSetFont(state->renderer.font);
-        state->renderer.textHeight = MeasureTextEx(state->renderer.font, "gÅ", (f32)state->layout.fontSize, (f32)(state->layout.fontSize / 4)).y;
-
-        /* Layout the top row of buttons. */
-        state->renderer.buttonHeight = 1.4f * state->renderer.textHeight;
-        state->renderer.buttonRowY = 0.0f;
-
-        state->renderer.openButtonWidth      = (f32)MeasureText("#1#Open",         state->layout.fontSize);
-        state->renderer.saveImageButtonWidth = (f32)MeasureText("#184#Save Image", state->layout.fontSize);
-        state->renderer.firstButtonWidth     = (f32)MeasureText("#129#First",      state->layout.fontSize);
-        state->renderer.previousButtonWidth  = (f32)MeasureText("#118#Previous",   state->layout.fontSize);
-        state->renderer.nextButtonWidth      = (f32)MeasureText("#119#PNext",      state->layout.fontSize);
-        state->renderer.lastButtonWidth      = (f32)MeasureText("#134#Last",       state->layout.fontSize);
-
-        /* Layout buttons that flow from the left. */
-        state->renderer.openButtonX = BUTTON_HORIZONTAL_PADDING;
-        state->renderer.saveImageButtonX = state->renderer.openButtonX + state->renderer.openButtonWidth + BUTTON_HORIZONTAL_PADDING;
-
-        /* Set some GUI styles and defaults */
-        GuiSetStyle(DEFAULT, TEXT_SIZE, state->layout.fontSize);
-        GuiSetStyle(BUTTON, BORDER_WIDTH, 0);
-    }
-
-    /* Handle window resizes */
-    i32 const screenWidth = GetScreenWidth();
-    i32 const screenHeight = GetScreenHeight();
-
-    if(screenWidth != state->layout.screenWidth || screenHeight != state->layout.screenHeight)
-    {
-        /* Calculate the minimum allowable width to hold all the buttons */
-        f32 minWidth = state->renderer.openButtonWidth
-            + state->renderer.saveImageButtonWidth
-            + state->renderer.firstButtonWidth
-            + state->renderer.previousButtonWidth
-            + state->renderer.nextButtonWidth
-            + state->renderer.lastButtonWidth
-            + 5.0f * BUTTON_HORIZONTAL_PADDING;
-
-        state->layout.screenWidth = screenWidth > minWidth ? screenWidth : minWidth;
-        state->layout.screenHeight = screenHeight;
-        UnloadRenderTexture(state->renderer.left_pane);
-        UnloadRenderTexture(state->renderer.right_pane);
-
-        state->renderer.left_pane = LoadRenderTexture(state->layout.screenWidth / 2, state->layout.screenHeight - state->renderer.buttonHeight);
-        state->renderer.right_pane = LoadRenderTexture(state->layout.screenWidth / 2, state->layout.screenHeight - state->renderer.buttonHeight);
-        state->renderer.splitScreenRect = (Rectangle){ 0.0f, 0.0f, (f32)state->renderer.left_pane.texture.width, (f32)-state->renderer.left_pane.texture.height };
-
-        /* Layout buttons that are centered. */
-        f32 screenWidth_f32 = (f32)state->layout.screenWidth;
-        f32 centeredButtonsWidth =
-            state->renderer.lastButtonWidth
-            + state->renderer.nextButtonWidth 
-            + state->renderer.previousButtonWidth 
-            + state->renderer.firstButtonWidth 
-            + 3.0f * BUTTON_HORIZONTAL_PADDING;
-
-        f32 minCenteredButtonsX = state->renderer.saveImageButtonX + state->renderer.saveImageButtonWidth + BUTTON_HORIZONTAL_PADDING;
-
-        state->renderer.firstButtonX = (screenWidth_f32 - centeredButtonsWidth) / 2.0f;
-        if(state->renderer.firstButtonX < minCenteredButtonsX) { state->renderer.firstButtonX = minCenteredButtonsX; }
-
-        state->renderer.previousButtonX = state->renderer.firstButtonX     + state->renderer.firstButtonWidth    + BUTTON_HORIZONTAL_PADDING;
-        state->renderer.nextButtonX =     state->renderer.previousButtonX  + state->renderer.previousButtonWidth + BUTTON_HORIZONTAL_PADDING;
-        state->renderer.lastButtonX =     state->renderer.nextButtonX      + state->renderer.nextButtonWidth     + BUTTON_HORIZONTAL_PADDING;
-    }
 #undef BUTTON_HORIZONTAL_PADDING
-}
-
-void 
-draw_left_pane(ProgramState *state)
-{
-    RendererState *r = &state->renderer;
-    RenderTexture *render_texture = &r->left_pane;
-    Texture *texture = &render_texture->texture;
-    i32 const width = texture->width;
-    i32 const height = texture->height;
-
-    BeginTextureMode(*render_texture);
-
-    {
-        ClearBackground(RAYWHITE);
-
-#if GRAPHICS_DEBUG
-        Rectangle lrect = {.x = 0, .y = 0, .width = width, .height = height };
-        DrawRectangleLinesEx(lrect, 8.0, GREEN);
-#endif
-    }
-
-    EndTextureMode();
-
-}
-
-void 
-draw_right_pane(ProgramState *state)
-{
-    RendererState *r = &state->renderer;
-    RenderTexture *render_texture = &r->right_pane;
-    Texture *texture = &render_texture->texture;
-    i32 const width = texture->width;
-    i32 const height = texture->height;
-
-    BeginTextureMode(*render_texture);
-
-    {
-        ClearBackground(RAYWHITE);
-
-#if GRAPHICS_DEBUG
-        Rectangle rrect = {.x = 0, .y = 0, .width = width, .height = height };
-        DrawRectangleLinesEx(rrect, 8.0, PINK);
-#endif
-    }
-
-    EndTextureMode();
-}
-
-void 
-draw_button_bar(ProgramState *state)
-{
-    RendererState *r = &state->renderer;
-    if(GuiButton((Rectangle){ .x = r->openButtonX, .y = r->buttonRowY, .width = r->openButtonWidth, .height = r->buttonHeight }, "#1#Open"))
-    {
-        // TODO: Handle File Open
-        TraceLog(LOG_ERROR, "File open button not implemented yet!");
-    }
-
-    if(GuiButton((Rectangle){ .x = r->saveImageButtonX, .y = r->buttonRowY, .width = r->saveImageButtonWidth, .height = r->buttonHeight }, "#184#Save Image"))
-    {
-        // TODO: Handle Save Image 
-        TraceLog(LOG_ERROR, "Save image button not implemented yet!");
-    }
-
-    if(GuiButton((Rectangle){ .x = r->firstButtonX, .y = r->buttonRowY, .width = r->firstButtonWidth, .height = r->buttonHeight }, "#129#First"))
-    {
-        // TODO: Handle First
-        TraceLog(LOG_ERROR, "First button not implemented yet!");
-    }
-
-    if(GuiButton((Rectangle){ .x = r->previousButtonX, .y = r->buttonRowY, .width = r->previousButtonWidth, .height = r->buttonHeight }, "#118#Previous"))
-    {
-        // TODO: Handle Previous
-        TraceLog(LOG_ERROR, "Previous button not implemented yet!");
-    }
-
-    if(GuiButton((Rectangle){ .x = r->nextButtonX, .y = r->buttonRowY, .width = r->nextButtonWidth, .height = r->buttonHeight }, "#119#Next"))
-    {
-        // TODO: Handle Next
-        TraceLog(LOG_ERROR, "Next button not implemented yet!");
-    }
-
-    if(GuiButton((Rectangle){ .x = r->lastButtonX, .y = r->buttonRowY, .width = r->lastButtonWidth, .height = r->buttonHeight }, "#134#Last"))
-    {
-        // TODO: Handle Last
-        TraceLog(LOG_ERROR, "Last button not implemented yet!");
-    }
-
-}
 

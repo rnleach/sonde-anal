@@ -226,6 +226,24 @@ static inline b32 coy_condvar_wake(CoyCondVar *cv);
 static inline b32 coy_condvar_wake_all(CoyCondVar *cv);
 static inline void coy_condvar_destroy(CoyCondVar *cv); /* Must set valid member to false. */
 
+static inline i32 coy_cpu_count(void);
+
+#if defined(_MSC_VER) && !defined(__clang__)
+    #define COY_USE_INTERLOCKED_ATOMICS
+#endif
+
+#ifdef COY_USE_INTERLOCKED_ATOMICS
+typedef i32 CoyAtomicI32;
+#else
+typedef _Atomic i32 CoyAtomicI32;
+#endif
+
+static inline void coy_atomic_i32_init(CoyAtomicI32 *obj, i32 value);
+static inline i32 coy_atomic_i32_load(CoyAtomicI32 const *obj);
+static inline void coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value);
+static inline i32 coy_atomic_i32_fetch_add(CoyAtomicI32 *obj, i32 value);
+static inline i32 coy_atomic_i32_fetch_sub(CoyAtomicI32 *obj, i32 value);
+
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                  Thread Safe Channel
  *---------------------------------------------------------------------------------------------------------------------------
@@ -297,7 +315,7 @@ static inline void coy_task_thread_destroy(CoyTaskThread *thread);
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                      Thread Pool
  *---------------------------------------------------------------------------------------------------------------------------
- * A pool of worker threads.
+ * A pool of worker threads that can take an arbitrary function and it's data (arguments) for each call.
  */
 
 typedef enum 
@@ -334,6 +352,18 @@ typedef struct
 static inline void coy_threadpool_initialize(CoyThreadPool *pool, size nthreads);
 static inline void coy_threadpool_destroy(CoyThreadPool *pool);    /* Finish pending tasks and shut down. */
 static inline void coy_threadpool_submit(CoyThreadPool *pool, CoyFuture *fut);
+
+typedef struct
+{
+    CoyAtomicI32 pending;
+    CoyMutex mutex;
+    CoyCondVar cond;
+} CoyBatchCompletion;
+
+static inline void coy_batch_completion_init(CoyBatchCompletion *bc, i32 num_tasks);
+static inline void coy_batch_completion_destroy(CoyBatchCompletion *bc);
+static inline void coy_batch_completion_task_done(CoyBatchCompletion *bc); /* Called in worker thread when task complete. */
+static inline void coy_batch_completion_wait(CoyBatchCompletion *bc);      /* Called in thread waiting for tasks.         */
 
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                    Profiling Tools
@@ -1236,6 +1266,45 @@ coy_threadpool_submit(CoyThreadPool *pool, CoyFuture *fut)
     coy_channel_send(&pool->queue, fut);
 }
 
+static inline void 
+coy_batch_completion_init(CoyBatchCompletion *bc, i32 num_tasks)
+{
+    coy_atomic_i32_init(&bc->pending, num_tasks);
+    bc->mutex = coy_mutex_create();
+    bc->cond = coy_condvar_create();
+}
+
+static inline void 
+coy_batch_completion_destroy(CoyBatchCompletion *bc)
+{
+    coy_mutex_destroy(&bc->mutex);
+    coy_condvar_destroy(&bc->cond);
+}
+
+static inline void 
+coy_batch_completion_task_done(CoyBatchCompletion *bc)
+{
+    i32 prev = coy_atomic_i32_fetch_sub(&bc->pending, 1);
+
+    if(prev == 1) /* This was the last one, counter is now at zero so signal main thread. */
+    {
+        coy_mutex_lock(&bc->mutex);
+        coy_condvar_wake(&bc->cond);
+        coy_mutex_unlock(&bc->mutex);
+    }
+}
+
+static inline void 
+coy_batch_completion_wait(CoyBatchCompletion *bc)
+{
+    coy_mutex_lock(&bc->mutex);
+    while(coy_atomic_i32_load(&bc->pending) > 0)
+    {
+        coy_condvar_sleep(&bc->cond, &bc->mutex);
+    }
+    coy_mutex_unlock(&bc->mutex);
+}
+
 #if defined(_WIN32) || defined(_WIN64)
 
 #pragma warning(disable: 4142)
@@ -1979,6 +2048,44 @@ coy_condvar_destroy(CoyCondVar *cv)
     cv->valid = false;
 }
 
+static inline i32 
+coy_cpu_count(void)
+{
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors;
+}
+
+static inline void 
+coy_atomic_i32_init(CoyAtomicI32 *obj, i32 value)
+{
+    *obj = value;
+}
+
+static inline i32 
+coy_atomic_i32_load(CoyAtomicI32 const *obj)
+{
+    return InterlockedCompareExchange((LONG*)obj, 0, 0);
+}
+
+static inline void 
+coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value)
+{
+    InterlockedExchange((LONG*)obj, value);
+}
+
+static inline i32 
+coy_atomic_i32_fetch_add(CoyAtomicI32 *obj, i32 value)
+{
+    return InterlockedExchangeAdd((LONG*)obj, value);
+}
+
+static inline i32 
+coy_atomic_i32_fetch_sub(CoyAtomicI32 *obj, i32 value)
+{
+    return InterlockedExchangeSub((LONG*)obj, value);
+}
+
 static inline u32 
 coy_task_thread_func_internal(void *thread_params)
 {
@@ -2109,8 +2216,15 @@ coy_profile_read_os_timer(void)
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+static inline i32 
+coy_cpu_count(void)
+{
+    return sysconf(_SC_NPROCESSORS_ONLN);
+}
 
 static inline void 
 coy_profile_initialize_os_metrics(void)
@@ -2174,6 +2288,15 @@ coy_profile_read_os_page_fault_count(void)
 #include <sys/syslimits.h>
 #include <unistd.h>
 
+static inline i32 
+coy_cpu_count(void)
+{
+    i32 count;
+    size_t len = sizeof(count);
+    sysctlbyname("hw.ncpu", &count, &len, NULL, 0);
+    return count;
+}
+
 static inline void 
 coy_profile_initialize_os_metrics(void)
 {
@@ -2224,6 +2347,8 @@ coy_profile_read_os_page_fault_count(void)
 #include <x86intrin.h>
 #include <unistd.h>
 #include <dlfcn.h>
+
+#include <stdatomic.h>
 
 static inline u64
 coy_time_now(void)
@@ -2820,6 +2945,36 @@ coy_condvar_destroy(CoyCondVar *cv)
     int status = pthread_cond_destroy((pthread_cond_t *)&cv->cond_var[0]);
     Assert(status == 0);
     cv->valid = false;
+}
+
+static inline void 
+coy_atomic_i32_init(CoyAtomicI32 *obj, i32 value)
+{
+    atomic_init(obj, value);
+}
+
+static inline i32 
+coy_atomic_i32_load(CoyAtomicI32 const *obj)
+{
+    return atomic_load(obj);
+}
+
+static inline void 
+coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value)
+{
+    atomic_store(obj, value);
+}
+
+static inline i32 
+coy_atomic_i32_fetch_add(CoyAtomicI32 *obj, i32 value)
+{
+    return atomic_fetch_add(obj, value);
+}
+
+static inline i32 
+coy_atomic_i32_fetch_sub(CoyAtomicI32 *obj, i32 value)
+{
+    return atomic_fetch_sub(obj, value);
 }
 
 static inline void *

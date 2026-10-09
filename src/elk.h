@@ -1623,9 +1623,6 @@ elk_str_parse_datetime_long_format(ElkStr str, ElkTime *out)
 static inline b32
 elk_str_parse_datetime_long_format(ElkStr str, ElkTime *out)
 {
-    /* Calculate the start address to load it into the buffer with just the right positions for the characters. */
-    uptr start = (uptr)str.start + str.len + 7 - 32;
-
     i64 year = INT64_MIN;
     i64 month = INT64_MIN;
     i64 day = INT64_MIN;
