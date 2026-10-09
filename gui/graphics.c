@@ -587,6 +587,7 @@ DrawPolylineThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f
     }
 
     /* Single accelerated draw call for the entire path */
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, num_vertices, indices, num_indices);
 }
 
