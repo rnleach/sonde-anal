@@ -315,9 +315,9 @@ SDL_AppIterate(void *appstate)
         SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
         i32 logical_w = (i32)(w / scale_x);
 
-        f32 const bar_w = logical_w;
+        f32 const bar_w = logical_w * 0.5;
         f32 const bar_h = 60.0f;
-        f32 x = (logical_w - bar_w) * 0.5f;
+        f32 x = 0.0f;
         f32 y = 0.0f;
 
         if(nk_begin(ctx, "Actions", nk_rect(x, y, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
@@ -329,22 +329,22 @@ SDL_AppIterate(void *appstate)
                 SDL_Log("Load");
             }
 
-            if (nk_button_label(ctx, "First"))
+            if (nk_button_label(ctx, "|<"))
             {
                 SDL_Log("First");
             }
 
-            if (nk_button_label(ctx, "Previous"))
+            if (nk_button_label(ctx, "<"))
             {
                 SDL_Log("Previous");
             }
 
-            if (nk_button_label(ctx, "Next"))
+            if (nk_button_label(ctx, ">"))
             {
                 SDL_Log("Next");
             }
 
-            if (nk_button_label(ctx, "Last"))
+            if (nk_button_label(ctx, ">|"))
             {
                 SDL_Log("Last");
             }
