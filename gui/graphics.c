@@ -8,6 +8,7 @@ b32 DrawLineThick(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2,  f32 width, SDL
 b32 DrawLineThickRoundedAA(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2, f32 width, SDL_FColor color);
 
 b32 DrawPolylineThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
+b32 DrawPolylineThickAA(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineFilletedThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolygonSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
@@ -88,8 +89,8 @@ DrawPointRound(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColo
 
     /* Dynamically scale circle smoothness with size (min 8, max 64 segments) */
     int segments = (int) diameter;
-    if (segments < 8)  { segments = 8;  }
-    if (segments > 64) { segments = 64; }
+    if(segments < 8)  { segments = 8;  }
+    if(segments > 64) { segments = 64; }
 
     /* Pre-allocate stacks for max segments (64 outer + 1 center vertex) */
     SDL_Vertex vertices[65] = {0};
@@ -122,6 +123,7 @@ DrawPointRound(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColo
         indices[i * 3 + 2] = (i + 1 == segments) ? 1 : i + 2;
     }
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, segments + 1, indices, segments * 3);
 }
 
@@ -136,7 +138,7 @@ DrawLineThick(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2,  f32 width, 
     f32 length = sqrtf(dx * dx + dy * dy);
 
     /* Handle zero-length lines by rendering nothing or a small dot */
-    if (length == 0.0f) { return DrawPointRound(renderer, p1, width, color); }
+    if(length == 0.0f) { return DrawPointRound(renderer, p1, width, color); }
 
     /* Perpendicular unit vector scaled by half-width */
     f32 half_w = width * 0.5f;
@@ -169,6 +171,7 @@ DrawLineThick(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2,  f32 width, 
     /* Index array forming two triangles (0-1-2 and 0-2-3) */
     i32 const indices[6] = { 0, 1, 2, 0, 2, 3 };
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, 4, indices, 6);
 }
 
@@ -293,10 +296,159 @@ DrawLineThickRoundedAA(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2, f32
             vert_count += 2;
         }
 
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
         SDL_RenderGeometry(renderer, NULL, cap_verts, vert_count, cap_indices, idx_count);
     }
 
     return true;
+}
+
+/* Draws a thick, anti-aliased polyline with mitered joints using SDL3 geometry. */
+b32 
+DrawPolylineThickAA(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_) 
+{
+    StopIf(!renderer || !points || count < 2 || width <= 0.0f, return false);
+    MagAllocator *alloc = &alloc_;
+
+    f32 miter_limit = 2.0f * width; 
+    f32 half_w = width * 0.5f;
+
+    /* 
+     * Core width is shrunk by 0.5px, fade width is expanded by 0.5px.
+     * If the line is very thin (width < 1.0), core shrinks to 0. 
+     */
+    f32 aa_fringe = 0.5f;
+    f32 core_w = (half_w > aa_fringe) ? (half_w - aa_fringe) : 0.0f;
+    f32 fade_w = half_w + aa_fringe;
+
+    /* 4 vertices per point (Outer Left, Inner Left, Inner Right, Outer Right) */
+    i32 num_vertices = count * 4;
+    
+    /* 3 quads (6 triangles) per segment */
+    i32 num_triangles = (count - 1) * 6;
+    i32 num_indices = num_triangles * 3;
+
+    SDL_Vertex *vertices = eco_arena_nmalloc(alloc, num_vertices, SDL_Vertex);
+    i32 *indices = eco_arena_nmalloc(alloc, num_indices, i32);
+    StopIf(!vertices || !indices, return false); 
+
+    /* Define our inner (solid) and outer (transparent) colors */
+    SDL_FColor color_inner = color;
+    SDL_FColor color_outer = color;
+    color_outer.a = 0.0f; /* Fade to transparent at the absolute edges */
+
+    for (i32 i = 0; i < count; i++)
+    {
+        f32 nx = 0.0f, ny = 0.0f;
+
+        if(i == 0)
+        {
+            f32 dx = points[1].x - points[0].x;
+            f32 dy = points[1].y - points[0].y;
+            f32 len = vec_length(dx, dy);
+            if(len > 0.0f) { nx = -dy / len; ny =  dx / len; }
+        }
+        else if(i == count - 1)
+        {
+            f32 dx = points[count - 1].x - points[count - 2].x;
+            f32 dy = points[count - 1].y - points[count - 2].y;
+            f32 len = vec_length(dx, dy);
+            if(len > 0.0f) { nx = -dy / len; ny =  dx / len; }
+        } 
+        else
+        {
+            f32 dx1 = points[i].x - points[i - 1].x;
+            f32 dy1 = points[i].y - points[i - 1].y;
+            f32 len1 = vec_length(dx1, dy1);
+
+            f32 dx2 = points[i + 1].x - points[i].x;
+            f32 dy2 = points[i + 1].y - points[i].y;
+            f32 len2 = vec_length(dx2, dy2);
+
+            if(len1 > 0.0f && len2 > 0.0f)
+            {
+                f32 u1x = dx1 / len1, u1y = dy1 / len1;
+                f32 u2x = dx2 / len2, u2y = dy2 / len2;
+
+                f32 n1x = -u1y, n1y =  u1x;
+
+                f32 tx = u1x + u2x;
+                f32 ty = u1y + u2y;
+                f32 t_len = vec_length(tx, ty);
+
+                if(t_len > 0.001f) 
+                {
+                    f32 miter_x = -ty / t_len;
+                    f32 miter_y =  tx / t_len;
+
+                    f32 dot = miter_x * n1x + miter_y * n1y;
+                    f32 miter_len = (dot != 0.0f) ? (1.0f / dot) : 1.0f;
+
+                    if(fabsf(miter_len) > miter_limit)
+                    {
+                        miter_len = (miter_len < 0.0f) ? -miter_limit : miter_limit;
+                    }
+
+                    nx = miter_x * miter_len;
+                    ny = miter_y * miter_len;
+                } 
+                else
+                {
+                    nx = n1x;
+                    ny = n1y;
+                }
+            }
+        }
+
+        /* Generate 4 vertices per point */
+        i32 v_idx = i * 4;
+
+        /* Outer Left */
+        vertices[v_idx + 0].position = (SDL_FPoint){ points[i].x + nx * fade_w, points[i].y + ny * fade_w };
+        vertices[v_idx + 0].color = color_outer;
+
+        /* Inner Left */
+        vertices[v_idx + 1].position = (SDL_FPoint){ points[i].x + nx * core_w, points[i].y + ny * core_w };
+        vertices[v_idx + 1].color = color_inner;
+
+        /* Inner Right */
+        vertices[v_idx + 2].position = (SDL_FPoint){ points[i].x - nx * core_w, points[i].y - ny * core_w };
+        vertices[v_idx + 2].color = color_inner;
+
+        /* Outer Right */
+        vertices[v_idx + 3].position = (SDL_FPoint){ points[i].x - nx * fade_w, points[i].y - ny * fade_w };
+        vertices[v_idx + 3].color = color_outer;
+    }
+
+    /* Build triangle index ribbon linking the 3 quads (left fringe, core, right fringe) */
+    i32 idx_count = 0;
+    for (i32 i = 0; i < count - 1; i++)
+    {
+        i32 L0  = i * 4 + 0;      /* Current Outer Left */
+        i32 L1  = i * 4 + 1;      /* Current Inner Left */
+        i32 R1  = i * 4 + 2;      /* Current Inner Right */
+        i32 R0  = i * 4 + 3;      /* Current Outer Right */
+
+        i32 nL0 = (i + 1) * 4 + 0; /* Next Outer Left */
+        i32 nL1 = (i + 1) * 4 + 1; /* Next Inner Left */
+        i32 nR1 = (i + 1) * 4 + 2; /* Next Inner Right */
+        i32 nR0 = (i + 1) * 4 + 3; /* Next Outer Right */
+
+        /* Quad 1: Left Fringe */
+        indices[idx_count++] = L0; indices[idx_count++] = L1; indices[idx_count++] = nL1;
+        indices[idx_count++] = L0; indices[idx_count++] = nL1; indices[idx_count++] = nL0;
+
+        /* Quad 2: Solid Core */
+        indices[idx_count++] = L1; indices[idx_count++] = R1; indices[idx_count++] = nR1;
+        indices[idx_count++] = L1; indices[idx_count++] = nR1; indices[idx_count++] = nL1;
+
+        /* Quad 3: Right Fringe */
+        indices[idx_count++] = R1; indices[idx_count++] = R0; indices[idx_count++] = nR0;
+        indices[idx_count++] = R1; indices[idx_count++] = nR0; indices[idx_count++] = nR1;
+    }
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    return SDL_RenderGeometry(renderer, NULL, vertices, num_vertices, indices, num_indices);
 }
 
 /* Draws a thick polyline with mitered joints using SDL3 geometry. */
@@ -323,25 +475,25 @@ DrawPolylineThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f
     {
         f32 nx = 0.0f, ny = 0.0f;
 
-        if (i == 0)
+        if(i == 0)
         {
             /* Start cap: perpendicular to first segment */
             f32 dx = points[1].x - points[0].x;
             f32 dy = points[1].y - points[0].y;
             f32 len = vec_length(dx, dy);
-            if (len > 0.0f)
+            if(len > 0.0f)
             {
                 nx = -dy / len;
                 ny =  dx / len;
             }
         }
-        else if (i == count - 1)
+        else if(i == count - 1)
         {
             /* End cap: perpendicular to last segment */
             f32 dx = points[count - 1].x - points[count - 2].x;
             f32 dy = points[count - 1].y - points[count - 2].y;
             f32 len = vec_length(dx, dy);
-            if (len > 0.0f)
+            if(len > 0.0f)
             {
                 nx = -dy / len;
                 ny =  dx / len;
@@ -359,7 +511,7 @@ DrawPolylineThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f
             f32 dy2 = points[i + 1].y - points[i].y;
             f32 len2 = vec_length(dx2, dy2);
 
-            if (len1 > 0.0f && len2 > 0.0f)
+            if(len1 > 0.0f && len2 > 0.0f)
             {
                 /* Normalized segment directions */
                 f32 u1x = dx1 / len1, u1y = dy1 / len1;
@@ -374,7 +526,7 @@ DrawPolylineThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f
                 f32 ty = u1y + u2y;
                 f32 t_len = vec_length(tx, ty);
 
-                if (t_len > 0.001f) 
+                if(t_len > 0.001f) 
                 {
                     /* Miter vector direction (perpendicular to tangent bisector) */
                     f32 miter_x = -ty / t_len;
@@ -385,7 +537,7 @@ DrawPolylineThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f
                     f32 miter_len = (dot != 0.0f) ? (1.0f / dot) : 1.0f;
 
                     /* Clamp extreme miter spikes on acute sharp angles */
-                    if (fabsf(miter_len) > miter_limit)
+                    if(fabsf(miter_len) > miter_limit)
                     {
                         miter_len = (miter_len < 0.0f) ? -miter_limit : miter_limit;
                     }
@@ -475,7 +627,7 @@ DrawPolylineSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 co
     sub_points[sub_idx++] = points[count - 1];
 
     /* Delegate thick geometry generation and rendering to the polyline function */
-    return DrawPolylineThick(renderer, sub_points, total_sub_points, width, color, alloc_);
+    return DrawPolylineThickAA(renderer, sub_points, total_sub_points, width, color, alloc_);
 }
 
 /* Helper to render a semicircular cap fan at a path endpoint. */
@@ -520,7 +672,7 @@ RenderCapFan(SDL_Renderer *renderer, SDL_FPoint center, SDL_FPoint dir, f32 widt
         verts[i + 1].color = color;
         /* verts[i + 1].tex_coord = (SDL_FPoint){0.0f, 0.0f}; */
 
-        if (i > 0)
+        if(i > 0)
         {
             /* indices[(i - 1) * 3]     = 0; */
             indices[(i - 1) * 3 + 1] = i;
@@ -528,6 +680,7 @@ RenderCapFan(SDL_Renderer *renderer, SDL_FPoint center, SDL_FPoint dir, f32 widt
         }
     }
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_RenderGeometry(renderer, NULL, verts, segments + 2, indices, segments * 3);
 }
 
@@ -584,7 +737,7 @@ DrawPolylineFilletedThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 
     out_points[out_count++] = points[count - 1];
 
     /* Render main body with mitered joints */
-    if(DrawPolylineThick(renderer, out_points, out_count, width, color, alloc_))
+    if(DrawPolylineThickAA(renderer, out_points, out_count, width, color, alloc_))
     {
         /* Render rounded end-caps at path start and end */
         /* Start cap pointing backward (from point 1 to point 0) */
@@ -641,6 +794,7 @@ RenderFilledSmoothPolygon(SDL_Renderer *renderer, const SDL_FPoint *smooth_pts, 
         indices[idx++] = i + 1;
     }
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, verts, count, indices, num_indices);
 }
 
@@ -700,7 +854,7 @@ DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 cou
     b32 status = true;
 
     /* Render solid filled interior if fill alpha > 0 */
-    if (fill_color.a > 0.0f)
+    if(fill_color.a > 0.0f)
     {
         status &= RenderFilledSmoothPolygon(renderer, smooth_pts, smooth_count, fill_color, alloc_);
     }
@@ -716,7 +870,7 @@ DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 cou
         }
 
         closed_border_pts[smooth_count] = smooth_pts[0]; /* Close loop */
-        status &= DrawPolylineThick(renderer, closed_border_pts, smooth_count + 1, border_width, border_color, alloc_);
+        status &= DrawPolylineThickAA(renderer, closed_border_pts, smooth_count + 1, border_width, border_color, alloc_);
     }
 
     return status;
@@ -725,38 +879,35 @@ DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 cou
 /**
  * Helper to render the filled interior of a convex/simple polygon.
  */
-static bool RenderFilledPolygon(SDL_Renderer *renderer, const SDL_FPoint *points, int count, SDL_FColor fill_color) {
-    if (count < 3 || fill_color.a <= 0.0f) return true;
+static b32 
+RenderFilledPolygon(SDL_Renderer *renderer, const SDL_FPoint *points, int count, SDL_FColor fill_color, MagAllocator alloc_)
+{
+    StopIf(count < 3 || fill_color.a <= 0.0f, return true);
+    MagAllocator *alloc = &alloc_;
 
-    SDL_Vertex *verts = (SDL_Vertex *)malloc(count * sizeof(SDL_Vertex));
-    int num_indices = (count - 2) * 3;
-    int *indices = (int *)malloc(num_indices * sizeof(int));
+    SDL_Vertex *verts = eco_arena_nmalloc(alloc, count, SDL_Vertex); Assert(verts);
+    i32 num_indices = (count - 2) * 3;
 
-    if (!verts || !indices) {
-        free(verts);
-        free(indices);
-        return false;
-    }
+    i32 *indices = eco_arena_nmalloc(alloc, num_indices, i32); Assert(indices);
 
-    for (int i = 0; i < count; i++) {
+    for (i32 i = 0; i < count; i++)
+    {
         verts[i].position = points[i];
         verts[i].color = fill_color;
-        verts[i].tex_coord = (SDL_FPoint){0.0f, 0.0f};
+        /* verts[i].tex_coord = (SDL_FPoint){0.0f, 0.0f}; */
     }
 
-    // Triangle fan tessellation from vertex 0
-    int idx = 0;
-    for (int i = 1; i < count - 1; i++) {
+    /* Triangle fan tessellation from vertex 0 */
+    i32 idx = 0;
+    for(i32 i = 1; i < count - 1; i++)
+    {
         indices[idx++] = 0;
         indices[idx++] = i;
         indices[idx++] = i + 1;
     }
 
-    bool success = SDL_RenderGeometry(renderer, NULL, verts, count, indices, num_indices);
-
-    free(verts);
-    free(indices);
-    return success;
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    return SDL_RenderGeometry(renderer, NULL, verts, count, indices, num_indices);
 }
 
 /* Helper function that draws a thick polyline with robust miter joints for open or closed loops. */
@@ -837,7 +988,7 @@ DrawPolylineThickEx(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count,
                 f32 miter_y = n1y + n2y;
                 f32 miter_dist = vec_length(miter_x, miter_y);
 
-                if (miter_dist > 0.001f)
+                if(miter_dist > 0.001f)
                 {
                     miter_x /= miter_dist;
                     miter_y /= miter_dist;
@@ -894,6 +1045,168 @@ DrawPolylineThickEx(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count,
         indices[idx_count++] = top_right;
     }
 
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    return SDL_RenderGeometry(renderer, NULL, vertices, num_vertices, indices, num_indices);
+}
+
+/* Helper function that draws a thick, anti-aliased polyline with robust miter joints for open or closed loops. */
+b32 
+DrawPolylineThickExAA(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, b32 closed, MagAllocator alloc_)
+{
+    StopIf(!renderer || !points || count < 2 || width <= 0.0f, return false);
+    MagAllocator *alloc = &alloc_;
+
+    f32 const miter_limit = 2.0f * width; 
+
+    /* Ignore duplicate last point on closed loops */
+    if(closed && count > 2)
+    {
+        f32 dx = points[count - 1].x - points[0].x;
+        f32 dy = points[count - 1].y - points[0].y;
+        if((dx * dx + dy * dy) < 0.0001f) { count--; }
+    }
+
+    f32 half_w = width * 0.5f;
+    f32 aa_fringe = 0.5f;
+    f32 core_w = (half_w > aa_fringe) ? (half_w - aa_fringe) : 0.0f;
+    f32 fade_w = half_w + aa_fringe;
+
+    i32 segment_count = closed ? count : (count - 1);
+    
+    /* 4 vertices per point */
+    i32 num_vertices = count * 4;
+    /* 3 quads (18 indices) per segment */
+    i32 num_indices = segment_count * 18;
+
+    SDL_Vertex *vertices = eco_arena_nmalloc(alloc, num_vertices, SDL_Vertex);
+    i32 *indices = eco_arena_nmalloc(alloc, num_indices, i32);
+    StopIf(!vertices || !indices, return false);
+
+    SDL_FColor color_inner = color;
+    SDL_FColor color_outer = color;
+    color_outer.a = 0.0f; /* Alpha fade for the outer fringes */
+
+    for(i32 i = 0; i < count; i++)
+    {
+        f32 nx = 0.0f, ny = 0.0f;
+
+        if(!closed && i == 0)
+        {
+            /* Open start cap */
+            f32 dx = points[1].x - points[0].x;
+            f32 dy = points[1].y - points[0].y;
+            f32 len = vec_length(dx, dy);
+            if(len > 0.0f) { nx = -dy / len; ny = dx / len; }
+        }
+        else if(!closed && i == count - 1)
+        {
+            /* Open end cap */
+            f32 dx = points[count - 1].x - points[count - 2].x;
+            f32 dy = points[count - 1].y - points[count - 2].y;
+            f32 len = vec_length(dx, dy);
+            if(len > 0.0f) { nx = -dy / len; ny = dx / len; }
+        } 
+        else
+        {
+            /* Closed loop vertex or interior open vertex */
+            i32 prev_idx = (i - 1 + count) % count;
+            i32 next_idx = (i + 1) % count;
+
+            f32 u1x = points[i].x - points[prev_idx].x;
+            f32 u1y = points[i].y - points[prev_idx].y;
+            f32 len1 = vec_length(u1x, u1y);
+
+            f32 u2x = points[next_idx].x - points[i].x;
+            f32 u2y = points[next_idx].y - points[i].y;
+            f32 len2 = vec_length(u2x, u2y);
+
+            if(len1 > 0.0f && len2 > 0.0f)
+            {
+                u1x /= len1; u1y /= len1;
+                u2x /= len2; u2y /= len2;
+
+                f32 n1x = -u1y, n1y = u1x;
+                f32 n2x = -u2y, n2y = u2x;
+
+                f32 miter_x = n1x + n2x;
+                f32 miter_y = n1y + n2y;
+                f32 miter_dist = vec_length(miter_x, miter_y);
+
+                if(miter_dist > 0.001f)
+                {
+                    miter_x /= miter_dist;
+                    miter_y /= miter_dist;
+
+                    f32 dot_u = u1x * u2x + u1y * u2y;
+                    if(dot_u < -1.0f) { dot_u = -1.0f; }
+                    if(dot_u >  1.0f) { dot_u =  1.0f; }
+
+                    f32 cos_half = sqrtf((1.0f + dot_u) * 0.5f);
+                    f32 miter_len = (cos_half > 0.001f) ? (1.0f / cos_half) : 1.0f;
+
+                    if(miter_len > miter_limit) { miter_len = miter_limit; }
+
+                    nx = miter_x * miter_len;
+                    ny = miter_y * miter_len;
+                }
+                else
+                {
+                    /* Fallback for hairpin turn */
+                    nx = n1x;
+                    ny = n1y;
+                }
+            }
+        }
+
+        i32 v_idx = i * 4;
+
+        /* Outer Left */
+        vertices[v_idx + 0].position = (SDL_FPoint){ points[i].x + nx * fade_w, points[i].y + ny * fade_w };
+        vertices[v_idx + 0].color = color_outer;
+
+        /* Inner Left */
+        vertices[v_idx + 1].position = (SDL_FPoint){ points[i].x + nx * core_w, points[i].y + ny * core_w };
+        vertices[v_idx + 1].color = color_inner;
+
+        /* Inner Right */
+        vertices[v_idx + 2].position = (SDL_FPoint){ points[i].x - nx * core_w, points[i].y - ny * core_w };
+        vertices[v_idx + 2].color = color_inner;
+
+        /* Outer Right */
+        vertices[v_idx + 3].position = (SDL_FPoint){ points[i].x - nx * fade_w, points[i].y - ny * fade_w };
+        vertices[v_idx + 3].color = color_outer;
+    }
+
+    /* Connect adjacent pairs into 3 quad strips (Left fade, solid core, right fade) */
+    i32 idx_count = 0;
+    for(i32 i = 0; i < segment_count; i++)
+    {
+        i32 i_next = (i + 1) % count;
+
+        i32 L0  = i * 4 + 0;
+        i32 L1  = i * 4 + 1;
+        i32 R1  = i * 4 + 2;
+        i32 R0  = i * 4 + 3;
+
+        i32 nL0 = i_next * 4 + 0;
+        i32 nL1 = i_next * 4 + 1;
+        i32 nR1 = i_next * 4 + 2;
+        i32 nR0 = i_next * 4 + 3;
+
+        /* Quad 1: Left Fringe */
+        indices[idx_count++] = L0; indices[idx_count++] = L1; indices[idx_count++] = nL1;
+        indices[idx_count++] = L0; indices[idx_count++] = nL1; indices[idx_count++] = nL0;
+
+        /* Quad 2: Solid Core */
+        indices[idx_count++] = L1; indices[idx_count++] = R1; indices[idx_count++] = nR1;
+        indices[idx_count++] = L1; indices[idx_count++] = nR1; indices[idx_count++] = nL1;
+
+        /* Quad 3: Right Fringe */
+        indices[idx_count++] = R1; indices[idx_count++] = R0; indices[idx_count++] = nR0;
+        indices[idx_count++] = R1; indices[idx_count++] = nR0; indices[idx_count++] = nR1;
+    }
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, num_vertices, indices, num_indices);
 }
 
@@ -907,7 +1220,7 @@ DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f3
     b32 status = true;
 
     /* Render solid interior fill */
-    if(fill_color.a > 0.0f) { status &= RenderFilledPolygon(renderer, points, count, fill_color); }
+    if(fill_color.a > 0.0f) { status &= RenderFilledPolygon(renderer, points, count, fill_color, alloc_); }
 
     /* Render thick mitered border along the closed loop */
     if(border_width > 0.0f && border_color.a > 0.0f)
@@ -920,7 +1233,7 @@ DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f3
         }
         closed_pts[count] = points[0]; /* Close loop */
 
-        status &= DrawPolylineThickEx(renderer, closed_pts, count + 1, border_width, border_color, true, alloc_);
+        status &= DrawPolylineThickExAA(renderer, closed_pts, count + 1, border_width, border_color, true, alloc_);
     }
 
     return status;
