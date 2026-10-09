@@ -242,6 +242,7 @@ SDL_AppIterate(void *appstate)
     SDL_FPoint end   = { .x=200.0f, .y=200.0f };
 
     SDL_FColor const white  = { .r=1.0f, .g=1.0f, .b=1.0f, .a=1.0f };
+    SDL_FColor const white2 = { .r=1.0f, .g=1.0f, .b=1.0f, .a=0.5f };
     SDL_FColor const green  = { .r=0.0f, .g=1.0f, .b=0.0f, .a=0.75f };
     SDL_FColor const red    = { .r=1.0f, .g=0.0f, .b=0.0f, .a=0.45f };
     SDL_FColor const red2   = { .r=1.0f, .g=0.0f, .b=0.0f, .a=1.00f };
@@ -269,7 +270,7 @@ SDL_AppIterate(void *appstate)
 
     success &= DrawPolylineThick(app->renderer, points, 5, 5.0, white, scratch); Assert(success);
 
-    success &= DrawPolylineSmoothThick(app->renderer, points, 5, 3.0, white, scratch); Assert(success);
+    success &= DrawPolylineSmoothThick(app->renderer, points, 5, 30.0, white2, scratch); Assert(success);
 
     points[0].x =  65.0; points[0].y = 335.0;
     points[1].x = 115.0; points[1].y = 535.0;
@@ -285,15 +286,15 @@ SDL_AppIterate(void *appstate)
     points[3].x = 950.0; points[3].y = 335.0;
     points[4].x = 950.0; points[4].y = 235.0;
 
-    success &= DrawPolygonSmoothThick(app->renderer, points, 5, 10.0, red2, yellow, scratch); Assert(success);
+    success &= DrawPolygonSmoothThick(app->renderer, app->scratch_layer, points, 5, 20.0, red, yellow, scratch); Assert(success);
 
-    points[0].x = 850.0; points[0].y = 435.0;
-    points[1].x = 750.0; points[1].y = 535.0;
-    points[2].x = 750.0; points[2].y = 635.0;
-    points[3].x = 950.0; points[3].y = 635.0;
-    points[4].x = 950.0; points[4].y = 535.0;
+    points[0].x =  850.0; points[0].y = 235.0;
+    points[1].x =  550.0; points[1].y = 535.0;
+    points[2].x =  550.0; points[2].y = 835.0;
+    points[3].x = 1150.0; points[3].y = 835.0;
+    points[4].x = 1150.0; points[4].y = 535.0;
 
-    success &= DrawPolygonThick(app->renderer, points, 5, 5.0, red2, yellow, scratch); Assert(success);
+    success &= DrawPolygonThick(app->renderer, points, 5, 25.0, red2, yellow, scratch); Assert(success);
 
     /* ======================================================================================================================
      *                                                           HUD

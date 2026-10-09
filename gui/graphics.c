@@ -11,7 +11,7 @@ b32 DrawPolylineThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 
 b32 DrawPolylineThickAA(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineFilletedThick(SDL_Renderer *r, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
-b32 DrawPolygonSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
+b32 DrawPolygonSmoothThick(SDL_Renderer *r, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
 b32 DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
@@ -810,7 +810,7 @@ RenderFilledSmoothPolygon(SDL_Renderer *renderer, const SDL_FPoint *smooth_pts, 
 
 /* Draws a closed, filled polygon with smooth filleted corners and a thick border. */
 b32
-DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_)
+DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_)
 {
     StopIf(!renderer || !points || count < 3, return false);
     MagAllocator *alloc = &alloc_;
@@ -880,15 +880,36 @@ DrawPolygonSmoothThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 cou
         }
 
         closed_border_pts[smooth_count] = smooth_pts[0]; /* Close loop */
-        status &= DrawPolylineThickAA(renderer, closed_border_pts, smooth_count + 1, border_width, border_color, alloc_);
+
+        SDL_Texture *prev_target = SDL_GetRenderTarget(renderer);
+
+        /* Ensure the texture background is entirely transparent */
+        SDL_SetTextureBlendMode(scratch_layer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderTarget(renderer, scratch_layer);
+        SDL_SetRenderDrawColorFloat(renderer, 0.0f, 0.0f, 0.0f, 0.0f);
+        SDL_RenderClear(renderer);
+
+        /* Force the geometry color to be 100% OPAQUE */
+        SDL_FColor opaque_color = border_color;
+        opaque_color.a = 1.0f; 
+
+        status &= DrawPolylineThickAA(renderer, closed_border_pts, smooth_count + 1, border_width, opaque_color, alloc_);
+
+        /* Restore the original render target */
+        SDL_SetRenderTarget(renderer, prev_target);
+
+        if(status)
+        {
+            /* Draw the scratch layer to the screen, applying the user's requested transparency uniformly */
+            SDL_SetTextureAlphaModFloat(scratch_layer, border_color.a);
+            SDL_RenderTexture(renderer, scratch_layer, NULL, NULL);
+        }
     }
 
     return status;
 }
 
-/**
- * Helper to render the filled interior of a convex/simple polygon.
- */
+/* Helper to render the filled interior of a convex/simple polygon. */
 static b32 
 RenderFilledPolygon(SDL_Renderer *renderer, const SDL_FPoint *points, int count, SDL_FColor fill_color, MagAllocator alloc_)
 {
@@ -1225,7 +1246,6 @@ b32
 DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_) 
 {
     StopIf(!renderer || !points || count < 3, return false);
-    MagAllocator *alloc = &alloc_;
 
     b32 status = true;
 
@@ -1235,15 +1255,7 @@ DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f3
     /* Render thick mitered border along the closed loop */
     if(border_width > 0.0f && border_color.a > 0.0f)
     {
-        /* Append first point to the end to form a continuous closed loop */
-        SDL_FPoint *closed_pts = eco_arena_nmalloc(alloc, count + 1, SDL_FPoint); Assert(closed_pts);
-        for (i32 i = 0; i < count; i++)
-        {
-            closed_pts[i] = points[i];
-        }
-        closed_pts[count] = points[0]; /* Close loop */
-
-        status &= DrawPolylineThickExAA(renderer, closed_pts, count + 1, border_width, border_color, true, alloc_);
+        status &= DrawPolylineThickExAA(renderer, points, count, border_width, border_color, true, alloc_);
     }
 
     return status;
