@@ -9,7 +9,7 @@ b32 DrawLineThickRoundedAA(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2, f32 wi
 
 b32 DrawPolylineThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineThickAA(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
-b32 DrawPolylineFilletedThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
+b32 DrawPolylineFilletedThick(SDL_Renderer *r, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolygonSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
 b32 DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
@@ -687,7 +687,7 @@ RenderCapFan(SDL_Renderer *renderer, SDL_FPoint center, SDL_FPoint dir, f32 widt
 
 /* Draws a polyline with straight segments, filleted corners, and rounded end-caps. */
 b32 
-DrawPolylineFilletedThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_)
+DrawPolylineFilletedThick(SDL_Renderer *renderer, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_)
 {
     StopIf(!renderer || !points || count < 2 || width <= 0.0f, return false);
     MagAllocator *alloc = &alloc_;
@@ -737,32 +737,41 @@ DrawPolylineFilletedThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 
 
     out_points[out_count++] = points[count - 1];
 
-    /* Render main body with mitered joints */
-    if(DrawPolylineThickAA(renderer, out_points, out_count, width, color, alloc_))
+    /* Backup current render target */
+    SDL_Texture *prev_target = SDL_GetRenderTarget(renderer);
+
+    /* Ensure the texture background is entirely transparent */
+    SDL_SetTextureBlendMode(scratch_layer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderTarget(renderer, scratch_layer);
+    SDL_SetRenderDrawColorFloat(renderer, 0.0f, 0.0f, 0.0f, 0.0f);
+    SDL_RenderClear(renderer);
+
+    /* Force the geometry color to be 100% OPAQUE */
+    SDL_FColor opaque_color = color;
+    opaque_color.a = 1.0f; 
+
+    /* Render main body and caps to the scratch layer fully opaque */
+    b32 success = DrawPolylineThickAA(renderer, out_points, out_count, width, opaque_color, alloc_);
+    if(success)
     {
-        /* Render rounded end-caps at path start and end */
-        /* Start cap pointing backward (from point 1 to point 0) */
-        SDL_FPoint dir_start =
-        {
-            out_points[0].x - out_points[1].x,
-            out_points[0].y - out_points[1].y
-        };
+        SDL_FPoint dir_start = { out_points[0].x - out_points[1].x, out_points[0].y - out_points[1].y };
+        RenderCapFan(renderer, out_points[0], dir_start, width, opaque_color);
 
-        RenderCapFan(renderer, out_points[0], dir_start, width, color);
-
-        /* End cap pointing forward (from point N-2 to point N-1) */
-        SDL_FPoint dir_end =
-        {
-            out_points[out_count - 1].x - out_points[out_count - 2].x,
-            out_points[out_count - 1].y - out_points[out_count - 2].y
-        };
-
-        RenderCapFan(renderer, out_points[out_count - 1], dir_end, width, color);
-
-        return true;
+        SDL_FPoint dir_end = { out_points[out_count - 1].x - out_points[out_count - 2].x, out_points[out_count - 1].y - out_points[out_count - 2].y };
+        RenderCapFan(renderer, out_points[out_count - 1], dir_end, width, opaque_color);
     }
 
-    return false;
+    /* Restore the original render target */
+    SDL_SetRenderTarget(renderer, prev_target);
+
+    if(success)
+    {
+        /* Draw the scratch layer to the screen, applying the user's requested transparency uniformly */
+        SDL_SetTextureAlphaModFloat(scratch_layer, color.a);
+        SDL_RenderTexture(renderer, scratch_layer, NULL, NULL);
+    }
+
+    return success;
 }
 
 /* Helper function that draws a filled convex/simple polygon with smooth filleted corners. */

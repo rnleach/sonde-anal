@@ -69,6 +69,7 @@ typedef struct
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
     SDL_Window   *window;
     SDL_Renderer *renderer;
+    SDL_Texture *scratch_layer;
     struct nk_context *ctx;
     u64 last_frame;          /* For measuring actual FPS.    */
     f32 frame_time;          /* Time to render a frame in ms */
@@ -136,6 +137,10 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_SetRenderScale(app->renderer, scale, scale);
     SDL_SetRenderVSync(app->renderer, 1);
 
+    i32 w, h;
+    SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
+    app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+
     /* Init Nuklear */
     app->ctx = nk_sdl_init(app->window, app->renderer, nk_sdl_allocator());
 
@@ -197,6 +202,12 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
         case SDL_EVENT_WINDOW_RESIZED:
             {
+                /* Rebuild the scratch texture. */
+                SDL_DestroyTexture(app->scratch_layer);
+                i32 w, h;
+                SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
+                app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+
             } break;
     }
 
@@ -266,7 +277,7 @@ SDL_AppIterate(void *appstate)
     points[3].x = 415.0; points[3].y = 235.0;
     points[4].x = 815.0; points[4].y = 535.0;
 
-    success &= DrawPolylineFilletedThick(app->renderer, points, 5, 50.0, red, scratch); Assert(success);
+    success &= DrawPolylineFilletedThick(app->renderer, app->scratch_layer, points, 5, 50.0, red, scratch); Assert(success);
 
     points[0].x = 850.0; points[0].y = 135.0;
     points[1].x = 750.0; points[1].y = 235.0;
@@ -372,6 +383,7 @@ SDL_AppQuit(void *appstate, SDL_AppResult result)
     if (!app) return;
 
     nk_sdl_shutdown(app->ctx);
+    SDL_DestroyTexture(app->scratch_layer);
     SDL_DestroyRenderer(app->renderer);
     SDL_DestroyWindow(app->window);
     SDL_Quit();
