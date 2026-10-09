@@ -10,7 +10,7 @@
 
 #define TARGET_FRAME_RATE_FPS 60
 #define FRAME_TARGET_TIME (1000000000 / TARGET_FRAME_RATE_FPS) /* in nanoseconds for SDL3 */
-#define FONT_SIZE (15.0f * 96.0f / 72.0f)
+#define FONT_SIZE (12.0f)
 
 /* ------------------------------------------------ Nuklear configuration ------------------------------------------------ */
 #define NK_INCLUDE_FIXED_TYPES
@@ -37,8 +37,31 @@
 
 #include "sonde-anal.c"
 
+/* ------------------------------------------------------ App State ------------------------------------------------------ */
+typedef struct
+{
+    /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
+    SDL_Window   *window;
+    SDL_Renderer *renderer;
+    SDL_Texture *scratch_layer;
+    TTF_TextEngine *text_engine;
+    TTF_Font *font;
+    struct nk_context *ctx;
+    u64 last_frame;          /* For measuring actual FPS.    */
+    f32 frame_time;          /* Time to render a frame in ms */
+
+    /* Debug Window Information. */
+    bool show_debug;
+    f32 mouse_x;
+    f32 mouse_y;
+
+} AppState;
+
+static AppState global_app_state = {0};
+
 /* ------------------------------------------------------- Modules ------------------------------------------------------- */
 #include "graphics.c"
+#include "sounding.c"
 
 #include "fonts/Roboto-Bold.h"
 
@@ -62,8 +85,8 @@ style_hud_panel(struct nk_context *ctx)
     ctx->style.button.rounding         = 6.0f;
     ctx->style.button.padding          = nk_vec2(12, 6);
     ctx->style.button.border           = 1.0f;
-    ctx->style.button.normal           = nk_style_item_color(nk_rgba(40, 40, 50, 180));
-    ctx->style.button.hover            = nk_style_item_color(nk_rgba(70, 70, 90, 220));
+    ctx->style.button.normal           = nk_style_item_color(nk_rgba(40, 40, 50, 255));
+    ctx->style.button.hover            = nk_style_item_color(nk_rgba(70, 70, 90, 255));
     ctx->style.button.active           = nk_style_item_color(nk_rgba(100, 100, 140, 255));
     ctx->style.button.text_normal      = nk_rgb(230, 230, 240);
     ctx->style.button.text_hover       = nk_rgb(255, 255, 255);
@@ -114,28 +137,6 @@ load_embedded_ttf_font(f32 ptsize)
 
     return font;
 }
-/* ------------------------------------------------------ App State ------------------------------------------------------ */
-typedef struct
-{
-    /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
-    SDL_Window   *window;
-    SDL_Renderer *renderer;
-    SDL_Texture *scratch_layer;
-    TTF_TextEngine *text_engine;
-    TTF_Font *font;
-    struct nk_context *ctx;
-    u64 last_frame;          /* For measuring actual FPS.    */
-    f32 frame_time;          /* Time to render a frame in ms */
-
-    /* Debug Window Information. */
-    bool show_debug;
-    f32 mouse_x;
-    f32 mouse_y;
-
-} AppState;
-
-static AppState global_app_state = {0};
-
 /* --------------------------------------------------- SDL3 Callbacks ---------------------------------------------------- */
 
 f32 
@@ -165,8 +166,6 @@ GetCurrentWindowRefreshRate(SDL_Window *window)
 SDL_AppResult 
 SDL_AppInit(void **appstate, int argc, char *argv[])
 {
-    (void)argc; (void)argv;
-
     /* Prefer wayland if possible on linux to get rid of flicker when resizing. */
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
 
@@ -204,13 +203,13 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
     app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
-    /* Init Nuklear */
+    /* Initialize Nuklear */
     app->ctx = nk_sdl_init(app->window, app->renderer, nk_sdl_allocator());
 
-    /* Fonts */
+    /* Fonts for Nuklear */
     {
         struct nk_font_atlas *atlas = nk_sdl_font_stash_begin(app->ctx);
-        struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, FONT_SIZE * scale, NULL);
+        struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, FONT_SIZE * 96.0 / 72.0 * scale, NULL);
         nk_sdl_font_stash_end(app->ctx);
 
         /* Compensate for the scale so text stays the right visual size */
@@ -221,9 +220,10 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     /* Initialize application state. */
     app->show_debug = false;
 
-    SDL_Log("Frame Rate: %.2f", GetCurrentWindowRefreshRate(app->window));
+    sounding_initialize_static_data(app);
 
-    nk_input_begin(app->ctx);   /* required by the backend */
+    /* Start receiving events - required by the SDL3 backend. */
+    nk_input_begin(app->ctx);
 
     return SDL_APP_CONTINUE;
 }
@@ -271,6 +271,9 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
                 app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
+                /* Rescale the sounding area. */
+                sounding_update_static_data(app);
+
             } break;
     }
 
@@ -279,13 +282,9 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
     return SDL_APP_CONTINUE;
 }
 
-static byte buffer[ECO_MiB(16)] = {0};
-
 SDL_AppResult 
 SDL_AppIterate(void *appstate)
 {
-    MagAllocator scratch = mag_allocator_static_arena_create(sizeof(buffer), buffer);
-
     u64 start_time = SDL_GetTicksNS();
 
     AppState *app = appstate;
@@ -295,74 +294,14 @@ SDL_AppIterate(void *appstate)
     nk_input_end(ctx);
 
     /* ---- Clear + draw “game” background ---- */
-    SDL_SetRenderDrawColor(app->renderer, 18, 28, 42, 255);
+    SDL_SetRenderDrawColor(app->renderer, 250, 250, 250, 255);
     SDL_RenderClear(app->renderer);
 
     /* Draw stuff */
     b32 success = true;
 
-    SDL_FPoint start = { .x=100.0f, .y=100.0f };
-    SDL_FPoint end   = { .x=200.0f, .y=200.0f };
-
-    SDL_FColor const white  = { .r=1.0f, .g=1.0f, .b=1.0f, .a=1.0f };
-    SDL_FColor const white2 = { .r=1.0f, .g=1.0f, .b=1.0f, .a=0.5f };
-    SDL_FColor const green  = { .r=0.0f, .g=1.0f, .b=0.0f, .a=0.75f };
-    SDL_FColor const red    = { .r=1.0f, .g=0.0f, .b=0.0f, .a=0.45f };
-    SDL_FColor const red2   = { .r=1.0f, .g=0.0f, .b=0.0f, .a=1.00f };
-    SDL_FColor const yellow = { .r=1.0f, .g=1.0f, .b=0.0f, .a=0.25f };
-
-    success &= DrawLineThick(app->renderer, start, end, 10.0f, white); Assert(success);
-
-    start = (SDL_FPoint){ .x=200.0f, .y=200.0f };
-    end   = (SDL_FPoint){ .x=400.0f, .y=100.0f };
-    success &= DrawLineThick(app->renderer, start, end, 10.0, white); Assert(success);
-
-    start = (SDL_FPoint){ .x=180.0f, .y=125.0f };
-    success &= DrawPointRound(app->renderer, start, 30.0, green); Assert(success);
-
-    start = (SDL_FPoint){ .x=150.0f, .y=125.0f };
-    end   = (SDL_FPoint){ .x=450.0f, .y=159.0f };
-    success &= DrawLineThickRoundedAA(app->renderer, start, end, 11.0, red); Assert(success);
-
-    SDL_FPoint points[5] = {0};
-    points[0].x =  50.0; points[0].y = 300.0;
-    points[1].x = 100.0; points[1].y = 500.0;
-    points[2].x = 200.0; points[2].y = 600.0;
-    points[3].x = 400.0; points[3].y = 200.0;
-    points[4].x = 800.0; points[4].y = 500.0;
-
-    success &= DrawPolylineThick(app->renderer, points, 5, 5.0, white, scratch); Assert(success);
-
-    success &= DrawPolylineSmoothThick(app->renderer, points, 5, 30.0, white2, scratch); Assert(success);
-
-    points[0].x =  65.0; points[0].y = 335.0;
-    points[1].x = 115.0; points[1].y = 535.0;
-    points[2].x = 215.0; points[2].y = 635.0;
-    points[3].x = 415.0; points[3].y = 235.0;
-    points[4].x = 815.0; points[4].y = 535.0;
-
-    success &= DrawPolylineFilletedThick(app->renderer, app->scratch_layer, points, 5, 50.0, red, scratch); Assert(success);
-
-    points[0].x = 850.0; points[0].y = 135.0;
-    points[1].x = 750.0; points[1].y = 235.0;
-    points[2].x = 750.0; points[2].y = 335.0;
-    points[3].x = 950.0; points[3].y = 335.0;
-    points[4].x = 950.0; points[4].y = 235.0;
-
-    success &= DrawPolygonSmoothThick(app->renderer, app->scratch_layer, points, 5, 20.0, red, yellow, scratch); Assert(success);
-
-    points[0].x =  850.0; points[0].y = 235.0;
-    points[1].x =  550.0; points[1].y = 535.0;
-    points[2].x =  550.0; points[2].y = 835.0;
-    points[3].x = 1150.0; points[3].y = 835.0;
-    points[4].x = 1150.0; points[4].y = 535.0;
-
-    success &= DrawPolygonThick(app->renderer, points, 5, 25.0, red2, yellow, scratch); Assert(success);
-
-    TTF_Text *text = TTF_CreateText(app->text_engine, app->font, "Hello SDL3", 0); Assert(text);
-    TTF_SetTextColor(text, 255, 200, 63, 255);
-    TTF_DrawRendererText(text, 100.0, 600.0);
-    TTF_DestroyText(text);
+    /* Draw the sounding area. */
+    success &= sounding_draw(app); Assert(success);
 
     /* ======================================================================================================================
      *                                                           HUD
