@@ -12,7 +12,7 @@ b32 DrawPolylineThickAA(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f3
 b32 DrawPolylineFilletedThick(SDL_Renderer *r, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineSmoothThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolygonSmoothThick(SDL_Renderer *r, SDL_Texture *scratch_layer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
-b32 DrawPolygonThick(SDL_Renderer *renderer, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
+b32 DrawPolygonThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 border_width, SDL_FColor border_color, SDL_FColor fill_color, MagAllocator alloc_);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 
