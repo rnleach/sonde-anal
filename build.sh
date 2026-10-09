@@ -7,7 +7,7 @@ TESTDIR="$PROJDIR/tests"
 
 CFLAGS="-Wall -Werror -Wno-unknown-pragmas -std=c11 -march=native"
 CFLAGS="$CFLAGS -D_DEFAULT_SOURCE -D_GNU_SOURCE -I$SOURCEDIR -I$TESTDIR"
-LDLIBS=" -Wl,--enable-new-dtags -lSDL3 -lm -lpthread -ldl -lrt -lX11"
+LDLIBS=" -Wl,--enable-new-dtags -lSDL3_ttf -lSDL3 -lm -lpthread -ldl -lrt -lX11"
 
 CC=cc
 

@@ -3,12 +3,14 @@
 #include <stdbool.h>
 
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 
 #define TARGET_FRAME_RATE_FPS 60
 #define FRAME_TARGET_TIME (1000000000 / TARGET_FRAME_RATE_FPS) /* in nanoseconds for SDL3 */
+#define FONT_SIZE (15.0f * 96.0f / 72.0f)
 
 /* ------------------------------------------------ Nuklear configuration ------------------------------------------------ */
 #define NK_INCLUDE_FIXED_TYPES
@@ -38,23 +40,28 @@
 /* ------------------------------------------------------- Modules ------------------------------------------------------- */
 #include "graphics.c"
 
+#include "fonts/Roboto-Bold.h"
+
 /* --------------------------------------- Helper: make a panel fully transparent ---------------------------------------- */
 static void 
 style_hud_panel(struct nk_context *ctx)
 {
-    /* Make the window background almost invisible */
-    ctx->style.window.fixed_background = nk_style_item_color(nk_rgba(0, 0, 0, 120));
+    /* Make the window background invisible */
+    ctx->style.window.fixed_background = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     ctx->style.window.background       = nk_rgba(0, 0, 0, 0);
-    ctx->style.window.border_color     = nk_rgba(255, 255, 255, 255);
-    ctx->style.window.border           = 1.0f;
+    ctx->style.window.border_color     = nk_rgba(255, 255, 255, 0);
+    ctx->style.window.border           = 0.0f;
     ctx->style.window.rounding         = 0.0f;
     ctx->style.window.padding          = nk_vec2(10, 8);
     ctx->style.window.spacing          = nk_vec2(6, 4);
 
+    /* Labels */
+    ctx->style.text.color              = nk_rgba(245, 245, 245, 255);
+
     /* Soft buttons */
-    ctx->style.button.rounding         = 4.0f;
+    ctx->style.button.rounding         = 6.0f;
     ctx->style.button.padding          = nk_vec2(12, 6);
-    ctx->style.button.border           = 0.0f;
+    ctx->style.button.border           = 1.0f;
     ctx->style.button.normal           = nk_style_item_color(nk_rgba(40, 40, 50, 180));
     ctx->style.button.hover            = nk_style_item_color(nk_rgba(70, 70, 90, 220));
     ctx->style.button.active           = nk_style_item_color(nk_rgba(100, 100, 140, 255));
@@ -63,6 +70,50 @@ style_hud_panel(struct nk_context *ctx)
     ctx->style.button.text_active      = nk_rgb(255, 255, 255);
 }
 
+static void 
+style_debug_panel(struct nk_context *ctx)
+{
+    /* Make the window background mostly opaque */
+    ctx->style.window.fixed_background = nk_style_item_color(nk_rgba(20, 20, 20, 192));
+    ctx->style.window.background       = nk_rgba(40, 40, 40, 255);
+    ctx->style.window.border_color     = nk_rgba(255, 255, 255, 255);
+    ctx->style.window.border           = 1.0f;
+    ctx->style.window.rounding         = 6.0f;
+    ctx->style.window.padding          = nk_vec2(10, 8);
+    ctx->style.window.spacing          = nk_vec2(6, 4);
+
+    /* Labels */
+    ctx->style.text.color              = nk_rgba(245, 245, 245, 255);
+
+#if 0
+    /* Soft buttons */
+    ctx->style.button.rounding         = 6.0f;
+    ctx->style.button.padding          = nk_vec2(12, 6);
+    ctx->style.button.border           = 1.0f;
+    ctx->style.button.normal           = nk_style_item_color(nk_rgba(40, 40, 50, 180));
+    ctx->style.button.hover            = nk_style_item_color(nk_rgba(70, 70, 90, 220));
+    ctx->style.button.active           = nk_style_item_color(nk_rgba(100, 100, 140, 255));
+    ctx->style.button.text_normal      = nk_rgb(230, 230, 240);
+    ctx->style.button.text_hover       = nk_rgb(255, 255, 255);
+    ctx->style.button.text_active      = nk_rgb(255, 255, 255);
+#endif
+}
+
+/* --------------------------------------- Helper: load a font from static memory ---------------------------------------- */
+TTF_Font * 
+load_embedded_ttf_font(f32 ptsize)
+{
+    /* Wrap the static array in an SDL3 IOStream */
+    SDL_IOStream *stream = SDL_IOFromConstMem(Roboto_Bold_ttf, Roboto_Bold_ttf_len);
+    StopIf(!stream, SDL_Log("Failed to create IOStream: %s", SDL_GetError()); return NULL);
+
+    /* Load the font via the IOStream wrapper. */
+    /* Setting the second parameter to 'true' automatically frees 'stream' when done/failed. */
+    TTF_Font *font = TTF_OpenFontIO(stream, true, ptsize);
+    StopIf(!font, SDL_Log("Failed to open embedded font: %s", SDL_GetError()); return NULL);
+
+    return font;
+}
 /* ------------------------------------------------------ App State ------------------------------------------------------ */
 typedef struct
 {
@@ -70,6 +121,8 @@ typedef struct
     SDL_Window   *window;
     SDL_Renderer *renderer;
     SDL_Texture *scratch_layer;
+    TTF_TextEngine *text_engine;
+    TTF_Font *font;
     struct nk_context *ctx;
     u64 last_frame;          /* For measuring actual FPS.    */
     f32 frame_time;          /* Time to render a frame in ms */
@@ -119,6 +172,8 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 
     b32 success = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     StopIf(!success, SDL_Log("SDL_Init failed: %s", SDL_GetError()); return SDL_APP_FAILURE);
+    success = TTF_Init();
+    StopIf(!success, SDL_Log("TTF_Init failed: %s", SDL_GetError()); return SDL_APP_FAILURE);
 
     AppState *app = &global_app_state;
     *appstate = app;
@@ -133,10 +188,18 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     StopIf(!success, SDL_Log("CreateWindowAndRenderer failed: %s", SDL_GetError()); return SDL_APP_FAILURE);
 
     /* High-DPI handling */
-    float scale = SDL_GetWindowDisplayScale(app->window);
+    f32 scale = SDL_GetWindowDisplayScale(app->window);
+    SDL_Log("Display Scale is: %f", scale);
     SDL_SetRenderScale(app->renderer, scale, scale);
     SDL_SetRenderVSync(app->renderer, 1);
 
+    /* Set up the font. */
+    app->text_engine = TTF_CreateRendererTextEngine(app->renderer);
+    StopIf(!app->text_engine, SDL_Log("Failure TTF_CreateRendererTextEngine."); return SDL_APP_FAILURE);
+    app->font = load_embedded_ttf_font(FONT_SIZE * scale);
+    StopIf(!app->font, SDL_Log("Failure to load font."); return SDL_APP_FAILURE);
+
+    /* Set up the scratch texture. */
     i32 w, h;
     SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
     app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
@@ -147,7 +210,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     /* Fonts */
     {
         struct nk_font_atlas *atlas = nk_sdl_font_stash_begin(app->ctx);
-        struct nk_font *font = nk_font_atlas_add_default(atlas, 16.0f * scale, NULL);
+        struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, FONT_SIZE * scale, NULL);
         nk_sdl_font_stash_end(app->ctx);
 
         /* Compensate for the scale so text stays the right visual size */
@@ -296,6 +359,11 @@ SDL_AppIterate(void *appstate)
 
     success &= DrawPolygonThick(app->renderer, points, 5, 25.0, red2, yellow, scratch); Assert(success);
 
+    TTF_Text *text = TTF_CreateText(app->text_engine, app->font, "Hello SDL3", 0); Assert(text);
+    TTF_SetTextColor(text, 255, 200, 63, 255);
+    TTF_DrawRendererText(text, 100.0, 600.0);
+    TTF_DestroyText(text);
+
     /* ======================================================================================================================
      *                                                           HUD
      * =================================================================================================================== */
@@ -348,6 +416,8 @@ SDL_AppIterate(void *appstate)
     /* --- Optional debug panel (toggle with F1) --- */
     if(app->show_debug)
     {
+        style_debug_panel(ctx);   /* apply debug style */
+
         u64 time = SDL_GetTicks();
         f32 frame_rate = 1000.0f / (f32)(time - app->last_frame);
         app->last_frame = time;
@@ -384,6 +454,8 @@ SDL_AppQuit(void *appstate, SDL_AppResult result)
     if (!app) return;
 
     nk_sdl_shutdown(app->ctx);
+    TTF_CloseFont(app->font);
+    TTF_DestroyRendererTextEngine(app->text_engine);
     SDL_DestroyTexture(app->scratch_layer);
     SDL_DestroyRenderer(app->renderer);
     SDL_DestroyWindow(app->window);
