@@ -359,30 +359,6 @@ SDL_AppIterate(void *appstate)
                 SDL_Log("Last");
             }
 
-            /* Skew-t area popup menu */
-            struct nk_rect context_menu_area =
-                {
-                    .x = (f32)app->skewt_clipping.x,
-                    .y = (f32)app->skewt_clipping.y,
-                    .w = (f32)app->skewt_clipping.w,
-                    .h = (f32)app->skewt_clipping.h,
-                };
-
-            /* Make sure we can see the popup menu. */
-            nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
-            nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
-
-            if (nk_contextual_begin(ctx, 0, nk_vec2(150, 120), context_menu_area)) 
-            {
-                nk_layout_row_dynamic(ctx, 25, 1);
-
-                if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) { nk_contextual_close(ctx); }
-
-            }
-
-            nk_contextual_end(ctx);
-            nk_style_pop_color(ctx);
-            nk_style_pop_style_item(ctx);
         }
         
         nk_end(ctx);
@@ -403,6 +379,42 @@ SDL_AppIterate(void *appstate)
             nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_y: %.1f", app->mouse_y);
             nk_labelf(ctx, NK_TEXT_LEFT, "frame rate: %.1f FPS", frame_rate);
             nk_labelf(ctx, NK_TEXT_LEFT, "frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
+        }
+        nk_end(ctx);
+    }
+
+    /* --- Skew-t area popup menu --- */
+    style_hud_panel(ctx); 
+    {
+        struct nk_rect context_menu_area =
+        {
+            .x = (f32)app->skewt_clipping.x,
+            .y = (f32)app->skewt_clipping.y,
+            .w = (f32)app->skewt_clipping.w,
+            .h = (f32)app->skewt_clipping.h,
+        };
+
+        if(nk_begin(ctx, "Skewt-Context", context_menu_area, NK_WINDOW_BORDER))
+        {
+
+            /* Make sure we can see the popup menu. */
+            nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
+            nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
+
+            if (nk_contextual_begin(ctx, 0, nk_vec2(150, 120), context_menu_area)) 
+            {
+                nk_layout_row_dynamic(ctx, 25, 1);
+
+                if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) 
+                { 
+                    nk_contextual_close(ctx); 
+                }
+
+                nk_contextual_end(ctx);
+            }
+
+            nk_style_pop_color(ctx);
+            nk_style_pop_style_item(ctx);
         }
         nk_end(ctx);
     }
