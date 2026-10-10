@@ -124,7 +124,7 @@ sounding_draw(AppState *app)
     {
         SDL_FPoint p1 = {.x = 0, .y = isobars_sdl[i] };
         SDL_FPoint p2 = {.x = w, .y = isobars_sdl[i] };
-        success &= DrawLineThick(app->renderer, p1, p2, isobar_width, isobar_color);
+        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isobar_width, isobar_color);
         i32 tw, th;
         TTF_GetTextSize(isobar_labels[i], &tw, &th);
         TTF_DrawRendererText(isobar_labels[i], 5.0, isobars_sdl[i] - (f32)th);
@@ -137,7 +137,7 @@ sounding_draw(AppState *app)
         f32 width = isotherms[i] == 0.0f && app->show_freezing_level ? freezing_level_width : isotherm_width;
 
         SDL_FPoint_Pair pair = isotherms_sdl[i];
-        success &= DrawLineThick(app->renderer, pair.p1, pair.p2, width, color);
+        success &= DrawLineThickRoundedAA(app->renderer, pair.p1, pair.p2, width, color);
         i32 tw, th;
         TTF_GetTextSize(isotherm_labels[i], &tw, &th);
         TTF_DrawRendererText(isotherm_labels[i], pair.p1.x,  pair.p1.y - (f32)th);
