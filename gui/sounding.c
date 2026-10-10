@@ -114,14 +114,10 @@ sounding_draw(AppState *app)
 {
     b32 success = true;
 
-    i32 w_i, h_i;
-    SDL_GetCurrentRenderOutputSize(app->renderer, &w_i, &h_i);
-    f32 w = (f32)w_i;
-    /* f32 h = (f32)h_i; */
+    f32 w = (f32)app->skewt_clipping.w;
 
     /* Set up clipping area. */
-    SDL_Rect clip = { .x = 0, .y = 0, .w = w_i / 2, .h = h_i };
-    SDL_SetRenderClipRect(app->renderer, &clip);
+    SDL_SetRenderClipRect(app->renderer, &app->skewt_clipping);
 
     /* Draw the isobars. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
@@ -137,8 +133,8 @@ sounding_draw(AppState *app)
     /* Draw the isotherms. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms); ++i)
     {
-        SDL_FColor color = isotherms[i] == 0.0f ? freezing_level_color : isotherm_color;
-        f32 width = isotherms[i] == 0.0f ? freezing_level_width : isotherm_width;
+        SDL_FColor color = isotherms[i] == 0.0f && app->show_freezing_level ? freezing_level_color : isotherm_color;
+        f32 width = isotherms[i] == 0.0f && app->show_freezing_level ? freezing_level_width : isotherm_width;
 
         SDL_FPoint_Pair pair = isotherms_sdl[i];
         success &= DrawLineThick(app->renderer, pair.p1, pair.p2, width, color);

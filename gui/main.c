@@ -47,13 +47,18 @@ typedef struct
     TTF_TextEngine *text_engine;
     TTF_Font *font;
     struct nk_context *ctx;
-    u64 last_frame;          /* For measuring actual FPS.    */
-    f32 frame_time;          /* Time to render a frame in ms */
+
+    SDL_Rect skewt_clipping;
+
+    /* UI Element Options*/
+    b32 show_freezing_level;
 
     /* Debug Window Information. */
     bool show_debug;
     f32 mouse_x;
     f32 mouse_y;
+    u64 last_frame;          /* For measuring actual FPS.    */
+    f32 frame_time;          /* Time to render a frame in ms */
 
 } AppState;
 
@@ -219,6 +224,10 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* Initialize application state. */
     app->show_debug = false;
+    app->skewt_clipping = (SDL_Rect){ .x = 0, .y = 0, .w = w / 2, .h = h };
+
+    /* Initialize options. */
+    app->show_freezing_level = true;
 
     sounding_initialize_static_data(app);
 
@@ -272,6 +281,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
                 /* Rescale the sounding area. */
+                app->skewt_clipping = (SDL_Rect){ .x = 0, .y = 0, .w = w / 2, .h = h };
                 sounding_update_static_data(app);
 
             } break;
@@ -304,7 +314,7 @@ SDL_AppIterate(void *appstate)
     success &= sounding_draw(app); Assert(success);
 
     /* ======================================================================================================================
-     *                                                           HUD
+     *                                                     Interactive UI
      * =================================================================================================================== */
     style_hud_panel(ctx);   /* apply transparent style */
 
@@ -348,7 +358,33 @@ SDL_AppIterate(void *appstate)
             {
                 SDL_Log("Last");
             }
+
+            /* Skew-t area popup menu */
+            struct nk_rect context_menu_area =
+                {
+                    .x = (f32)app->skewt_clipping.x,
+                    .y = (f32)app->skewt_clipping.y,
+                    .w = (f32)app->skewt_clipping.w,
+                    .h = (f32)app->skewt_clipping.h,
+                };
+
+            /* Make sure we can see the popup menu. */
+            nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
+            nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
+
+            if (nk_contextual_begin(ctx, 0, nk_vec2(150, 120), context_menu_area)) 
+            {
+                nk_layout_row_dynamic(ctx, 25, 1);
+
+                if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) { nk_contextual_close(ctx); }
+
+            }
+
+            nk_contextual_end(ctx);
+            nk_style_pop_color(ctx);
+            nk_style_pop_style_item(ctx);
         }
+        
         nk_end(ctx);
     }
 
