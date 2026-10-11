@@ -65,6 +65,7 @@ typedef struct
     TTF_TextEngine *text_engine;
     TTF_Font *font;
     struct nk_context *ctx;
+    u64 last_frame;          /* For measuring and controlling actual FPS.    */
 
     /* Skew-t area */
     ChartPanel skewt;
@@ -77,7 +78,6 @@ typedef struct
     bool show_debug;
     f32 mouse_x;
     f32 mouse_y;
-    u64 last_frame;          /* For measuring actual FPS.    */
     f32 frame_time;          /* Time to render a frame in ms */
 
 } AppState;
@@ -382,10 +382,21 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 SDL_AppResult 
 SDL_AppIterate(void *appstate)
 {
-    u64 start_time = SDL_GetTicksNS();
-
     AppState *app = appstate;
     struct nk_context *ctx = app->ctx;
+
+    u64 const target_frame_rate_ns = SDL_NS_PER_SECOND / 60;
+    u64 start_time = SDL_GetTicksNS();
+    u64 elapsed = start_time - app->last_frame;
+
+    if(elapsed < target_frame_rate_ns) 
+    {
+        SDL_DelayNS(target_frame_rate_ns - elapsed); 
+        return SDL_APP_CONTINUE;
+    }
+
+    f32 frame_rate = 1000000000.0f / (f32)(start_time - app->last_frame);
+    app->last_frame = start_time;
 
     /* Required for Nuklear to handle deltas correctly. */
     nk_input_end(ctx);
@@ -489,9 +500,6 @@ SDL_AppIterate(void *appstate)
     {
         style_debug_panel(ctx);   /* apply debug style */
 
-        u64 time = SDL_GetTicks();
-        f32 frame_rate = 1000.0f / (f32)(time - app->last_frame);
-        app->last_frame = time;
         if(nk_begin(ctx, "Debug", nk_rect(300, 150, 320, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
         {
             nk_layout_row_dynamic(ctx, 25, 1);
@@ -520,8 +528,8 @@ SDL_AppIterate(void *appstate)
     /* Required for Nuklear to handle deltas correctly. */
     nk_input_begin(ctx);
 
-    u64 elapsed = SDL_GetTicksNS() - start_time;
-    app->frame_time = (f32)elapsed * 1.0e-6f;
+    u64 elapsed_this_frame = SDL_GetTicksNS() - start_time;
+    app->frame_time = (f32)elapsed_this_frame * 1.0e-6f;
 
     SDL_RenderPresent(app->renderer);
 
