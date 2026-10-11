@@ -40,6 +40,22 @@
 /* ------------------------------------------------------ App State ------------------------------------------------------ */
 typedef struct
 {
+    /* Screen area properties. */
+    SDL_Rect clipping;      /* x & y are upper left corner, w & h are width and height, all i32                 */
+    f32 chart_w, chart_h;   /* The chart dimensions in screen coordinates.                                      */
+    f32 y_offset, x_offset; /* These are used to center the chart after accounting for different aspect ratios. */
+
+    /* Aspect ratio for data - always plot the chart with this aspect ratio. */
+    f32 ard;
+
+    /* Pan and zoom data */
+    SDL_FPoint pan;
+    f32 zf;
+
+} ChartPanel;
+
+typedef struct
+{
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
     SDL_Window   *window;
     SDL_Renderer *renderer;
@@ -48,9 +64,11 @@ typedef struct
     TTF_Font *font;
     struct nk_context *ctx;
 
-    SDL_Rect skewt_clipping;
+    /* Skew-t area */
+    ChartPanel skewt;
 
     /* UI Element Options*/
+    SDL_FColor background;
     b32 show_freezing_level;
 
     /* Debug Window Information. */
@@ -63,6 +81,63 @@ typedef struct
 } AppState;
 
 static AppState global_app_state = {0};
+
+/* ---------------------------------------------- Helpers for chart panels ----------------------------------------------- */
+static inline ChartPanel
+chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
+{
+    ChartPanel cp = {0};
+
+    cp.clipping.x = ulx; cp.clipping.y = uly; cp.clipping.w = w; cp.clipping.h = h;
+    f32 ars = (f32)w / (f32)h;
+
+    cp.ard = aspect_ratio;
+
+    cp.chart_w = ars > cp.ard ? (f32)h * cp.ard : (f32)w;
+    cp.chart_h = ars < cp.ard ? (f32)w / cp.ard : (f32)h;
+    cp.x_offset = ((f32)w - cp.chart_w) * 0.50f;
+    cp.y_offset = ((f32)h - cp.chart_h) * 0.50f;
+
+    cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
+    cp.zf = 1.0f;
+
+    return cp;
+}
+
+static inline void
+chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h)
+{
+    cp->clipping.x = ulx; cp->clipping.y = uly; cp->clipping.w = w; cp->clipping.h = h;
+    f32 ars = (f32)w / (f32)h;
+
+    cp->chart_w = ars > cp->ard ? (f32)h * cp->ard : (f32)w;
+    cp->chart_h = ars < cp->ard ? (f32)w / cp->ard : (f32)h;
+    cp->x_offset = ((f32)w - cp->chart_w) * 0.50f;
+    cp->y_offset = ((f32)h - cp->chart_h) * 0.50f;
+}
+
+static inline SDL_FPoint
+chart_panel_apply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp)
+{
+    /* pan */
+    p.x += cp->pan.x;
+    p.y += cp->pan.y;
+
+    /* zoom */
+    p.x = (p.x - 0.5f) * cp->zf + 0.5f;
+    p.y = (p.y - 0.5f) * cp->zf + 0.5f;
+
+    return p;
+}
+
+static inline SDL_FPoint
+chart_panel_convert_to_screen_coords(SDL_FPoint p, ChartPanel *cp)
+{
+    p.x = p.x * cp->chart_w + cp->x_offset;
+    p.y = p.y * cp->chart_h + cp->y_offset;
+
+    return p;
+}
 
 /* ------------------------------------------------------- Modules ------------------------------------------------------- */
 #include "graphics.c"
@@ -147,13 +222,12 @@ load_embedded_ttf_font(f32 ptsize)
 f32 
 GetCurrentWindowRefreshRate(SDL_Window *window) 
 {
-    /* FIX: Use SDL_GetDisplayForWindow instead of SDL_GetWindowDisplayID */
     SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
     
     if (display_id == 0)
     {
         SDL_Log("Failed to get Display for Window: %s", SDL_GetError());
-        return 60.0f; /* Default fallback */
+        return 0.0f; /* Default fallback */
     }
 
     /* Fetch the active desktop configuration mode for that display */
@@ -224,10 +298,11 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* Initialize application state. */
     app->show_debug = false;
-    app->skewt_clipping = (SDL_Rect){ .x = 0, .y = 0, .w = w / 2, .h = h };
+    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
 
     /* Initialize options. */
     app->show_freezing_level = true;
+    app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
 
     sounding_initialize_static_data(app);
 
@@ -281,7 +356,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
                 /* Rescale the sounding area. */
-                app->skewt_clipping = (SDL_Rect){ .x = 0, .y = 0, .w = w / 2, .h = h };
+                chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
                 sounding_update_static_data(app);
 
             } break;
@@ -304,7 +379,7 @@ SDL_AppIterate(void *appstate)
     nk_input_end(ctx);
 
     /* ---- Clear + draw “game” background ---- */
-    SDL_SetRenderDrawColor(app->renderer, 250, 250, 250, 255);
+    SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
     SDL_RenderClear(app->renderer);
 
     /* Draw stuff */
@@ -318,19 +393,17 @@ SDL_AppIterate(void *appstate)
      * =================================================================================================================== */
     style_hud_panel(ctx);   /* apply transparent style */
 
+    i32 w, h;
+    SDL_GetRenderOutputSize(app->renderer, &w, &h);
+    f32 scale_x, scale_y;
+    SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
+    i32 logical_w = (i32)(w / scale_x);
+
+    f32 const bar_w = logical_w * 0.5;
+    f32 const bar_h = 60.0f;
+
     {
-        i32 w, h;
-        SDL_GetRenderOutputSize(app->renderer, &w, &h);
-        f32 scale_x, scale_y;
-        SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
-        i32 logical_w = (i32)(w / scale_x);
-
-        f32 const bar_w = logical_w * 0.5;
-        f32 const bar_h = 60.0f;
-        f32 x = 0.0f;
-        f32 y = 0.0f;
-
-        if(nk_begin(ctx, "Actions", nk_rect(x, y, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
+        if(nk_begin(ctx, "Actions", nk_rect(0.0f, 0.0f, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
         {
             nk_layout_row_dynamic(ctx, 40, 5);
 
@@ -364,34 +437,14 @@ SDL_AppIterate(void *appstate)
         nk_end(ctx);
     }
 
-    /* --- Optional debug panel (toggle with F1) --- */
-    if(app->show_debug)
-    {
-        style_debug_panel(ctx);   /* apply debug style */
-
-        u64 time = SDL_GetTicks();
-        f32 frame_rate = 1000.0f / (f32)(time - app->last_frame);
-        app->last_frame = time;
-        if(nk_begin(ctx, "Debug", nk_rect(300, 150, 320, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
-        {
-            nk_layout_row_dynamic(ctx, 25, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_x: %.1f", app->mouse_x);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_y: %.1f", app->mouse_y);
-            nk_labelf(ctx, NK_TEXT_LEFT, "frame rate: %.1f FPS", frame_rate);
-            nk_labelf(ctx, NK_TEXT_LEFT, "frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
-        }
-        nk_end(ctx);
-    }
-
     /* --- Skew-t area popup menu --- */
-    style_hud_panel(ctx); 
     {
         struct nk_rect context_menu_area =
         {
-            .x = (f32)app->skewt_clipping.x,
-            .y = (f32)app->skewt_clipping.y,
-            .w = (f32)app->skewt_clipping.w,
-            .h = (f32)app->skewt_clipping.h,
+            .x = (f32)app->skewt.clipping.x,
+            .y = (f32)app->skewt.clipping.y + bar_h,
+            .w = (f32)app->skewt.clipping.w,
+            .h = (f32)app->skewt.clipping.h - bar_h,
         };
 
         if(nk_begin(ctx, "Skewt-Context", context_menu_area, NK_WINDOW_BORDER))
@@ -415,6 +468,36 @@ SDL_AppIterate(void *appstate)
 
             nk_style_pop_color(ctx);
             nk_style_pop_style_item(ctx);
+        }
+        nk_end(ctx);
+    }
+
+    /* --- Optional debug panel (toggle with F1) --- */
+    if(app->show_debug)
+    {
+        style_debug_panel(ctx);   /* apply debug style */
+
+        u64 time = SDL_GetTicks();
+        f32 frame_rate = 1000.0f / (f32)(time - app->last_frame);
+        app->last_frame = time;
+        if(nk_begin(ctx, "Debug", nk_rect(300, 150, 320, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
+        {
+            nk_layout_row_dynamic(ctx, 25, 1);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_x: %.1f", app->mouse_x);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_y: %.1f", app->mouse_y);
+            nk_labelf(ctx, NK_TEXT_LEFT, "frame rate: %.1f FPS", frame_rate);
+            nk_labelf(ctx, NK_TEXT_LEFT, "frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
+
+            nk_labelf(ctx, NK_TEXT_LEFT, "cp->y_offset: %.1f", app->skewt.y_offset);
+            nk_labelf(ctx, NK_TEXT_LEFT, "cp->x_offset: %.1f", app->skewt.x_offset);
+
+            nk_labelf(ctx, NK_TEXT_LEFT, "     cp->ard: %.1f", app->skewt.ard);
+            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_w: %.1f", app->skewt.chart_w);
+            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_h: %.1f", app->skewt.chart_h);
+
+            nk_labelf(ctx, NK_TEXT_LEFT, "      cp->zf: %.1f", app->skewt.zf);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.x: %.1f", app->skewt.pan.x);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.y: %.1f", app->skewt.pan.y);
         }
         nk_end(ctx);
     }
