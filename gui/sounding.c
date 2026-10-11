@@ -127,6 +127,12 @@ sounding_draw(AppState *app)
     ChartPanel *cp = &app->skewt;
     b32 success = true;
 
+    if(cp->needs_background_update)
+    {
+        cp->needs_background_update = false;
+        sounding_update_static_data(app);
+    }
+
     f32 w = (f32)cp->chart_w;
 
     /* Set up clipping area. */

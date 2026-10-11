@@ -45,6 +45,8 @@ typedef struct
     f32 chart_w, chart_h;   /* The chart dimensions in screen coordinates.                                      */
     f32 y_offset, x_offset; /* These are used to center the chart after accounting for different aspect ratios. */
 
+    b32 needs_background_update; /* If the zoom, pan, or window size change, this needs updated. */
+
     /* Aspect ratio for data - always plot the chart with this aspect ratio. */
     f32 ard;
 
@@ -345,6 +347,16 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
         case SDL_EVENT_MOUSE_WHEEL:
             {
+                SDL_Point loc = { .x = (i32)event->wheel.mouse_x, .y = (i32)event->wheel.mouse_y };
+                if(SDL_PointInRect(&loc, &app->skewt.clipping))
+                {
+                    f32 const factor = 1.1f;
+                    f32 zf = event->wheel.y > 0.0f ? factor : event->wheel.y < 0.0f ?  1.0f / factor : 1.0f;
+                    app->skewt.zf *= zf;
+                    app->skewt.zf = app->skewt.zf < 1.0f ? 1.0f : app->skewt.zf > 100.0f ? 100.0f : app->skewt.zf;
+                    app->skewt.needs_background_update = true;
+                }
+
             } break;
 
         case SDL_EVENT_WINDOW_RESIZED:
@@ -357,7 +369,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
                 /* Rescale the sounding area. */
                 chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
-                sounding_update_static_data(app);
+                app->skewt.needs_background_update = true;
 
             } break;
     }
