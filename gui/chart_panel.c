@@ -26,6 +26,7 @@ static inline SDL_FPoint chart_panel_unapply_pan_and_zoom(SDL_FPoint p, ChartPan
 static inline SDL_FPoint chart_panel_convert_to_screen_coords(SDL_FPoint p, ChartPanel *cp);
 static inline SDL_FPoint chart_panel_convert_from_screen_coords(SDL_FPoint p, ChartPanel *cp);
 static inline void chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor);
+static inline void chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 static inline ChartPanel
@@ -142,6 +143,21 @@ chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor)
     cp->zf = zf2;
     cp->pan.x = dx2;
     cp->pan.y = dy2;
+
+    chart_panel_clamp_pan(cp);
+}
+
+static inline void 
+chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to)
+{
+    from = chart_panel_convert_from_screen_coords(from, cp);
+    to = chart_panel_convert_from_screen_coords(to, cp);
+
+    f32 dx = (to.x - from.x) / cp->zf;
+    f32 dy = (to.y - from.y) / cp->zf;
+
+    cp->pan.x += dx;
+    cp->pan.y += dy;
 
     chart_panel_clamp_pan(cp);
 }

@@ -10,10 +10,13 @@ typedef struct
     TTF_TextEngine *text_engine;
     TTF_Font *font;
     struct nk_context *ctx;
-    u64 last_frame;          /* For measuring and controlling actual FPS.    */
+    u64 last_frame;                /* For measuring and controlling actual FPS.    */
 
-    /* Skew-t area */
+    /* Charts and drawing areas */
     ChartPanel skewt;
+
+    /* Useful UI state for things like panning */
+    SDL_FPoint mouse_loc;
 
     /* UI Element Options*/
     SDL_FColor background;
@@ -21,8 +24,6 @@ typedef struct
 
     /* Debug Window Information. */
     bool show_debug;
-    f32 mouse_x;
-    f32 mouse_y;
     f32 frame_time;          /* Time to render a frame in ms */
 
 } AppState;

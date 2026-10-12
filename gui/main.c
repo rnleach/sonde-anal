@@ -224,6 +224,8 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
     SDL_ConvertEventToRenderCoordinates(app->renderer, event);
 
+    nk_sdl_handle_event(app->ctx, event);
+
     switch (event->type)
     {
         case SDL_EVENT_QUIT:
@@ -239,11 +241,23 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
         case SDL_EVENT_MOUSE_MOTION:
             {
-                app->mouse_x = event->motion.x;
-                app->mouse_y = event->motion.y;
+                SDL_Point loc = { .x = (i32)event->motion.x, .y = (i32)event->motion.y };
+                SDL_FPoint locf = { .x = event->motion.x, .y = event->motion.y };
+
+                if( event->motion.state == SDL_BUTTON_LEFT && SDL_PointInRect(&loc, &app->skewt.clipping))
+                {
+                    chart_panel_pan(&app->skewt, app->mouse_loc, locf);
+
+                    app->skewt.needs_background_update = true;
+                }
+
+                app->mouse_loc = locf;
             } break;
 
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:  /* Fall through */
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            {
+            } break;
+
         case SDL_EVENT_MOUSE_BUTTON_UP:
             {
             } break;
@@ -280,8 +294,6 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
             } break;
     }
-
-    nk_sdl_handle_event(app->ctx, event);
 
     return SDL_APP_CONTINUE;
 }
@@ -410,8 +422,7 @@ SDL_AppIterate(void *appstate)
         if(nk_begin(ctx, "Debug", nk_rect(300, 150, 320, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
         {
             nk_layout_row_dynamic(ctx, 25, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_x: %.1f", app->mouse_x);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_y: %.1f", app->mouse_y);
+            nk_labelf(ctx, NK_TEXT_LEFT, " mouse_loc: (%.1f, %.1f)", app->mouse_loc.x, app->mouse_loc.y);
             nk_labelf(ctx, NK_TEXT_LEFT, "frame rate: %.1f FPS", frame_rate);
             nk_labelf(ctx, NK_TEXT_LEFT, "frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
 
