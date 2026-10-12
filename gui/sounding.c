@@ -7,6 +7,8 @@
 #define T_MIN -46.5f
 
 /* --------------------------------------------------------- API --------------------------------------------------------- */
+static inline b32 sounding_initialize_static_data(AppState *app);
+static inline b32 sounding_draw(AppState *app);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 typedef struct
@@ -69,8 +71,8 @@ chart_coords_to_pressure_hpa_temperature_c(SDL_FPoint pnt, ChartPanel *cp, Sonde
     t->val = (x - cp->ard*(1.0f - y)) * (T_MAX - T_MIN) + T_MIN;
 }
 
-b32
-sounding_update_static_data(AppState *app)
+static inline b32
+sounding_update_static_data(AppState *app) /* FIXME: Do I really need the whole app state? Could just use panel. */
 {
     ChartPanel *cp = &app->skewt;
 
@@ -103,7 +105,7 @@ sounding_update_static_data(AppState *app)
     return true;
 }
 
-b32
+static inline b32
 sounding_initialize_static_data(AppState *app)
 {
     b32 success = true;
@@ -131,7 +133,7 @@ sounding_initialize_static_data(AppState *app)
     return success;
 }
 
-b32
+static inline b32
 sounding_draw(AppState *app)
 {
     ChartPanel *cp = &app->skewt;

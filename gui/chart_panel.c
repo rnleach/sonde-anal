@@ -1,5 +1,6 @@
 /* This file includes the code for building aa zoomable, panable chart.                                                    */
 
+/* --------------------------------------------------------- API --------------------------------------------------------- */
 typedef struct
 {
     /* Screen area properties. */
@@ -18,7 +19,15 @@ typedef struct
 
 } ChartPanel;
 
-/* ---------------------------------------------- Helpers for chart panels ----------------------------------------------- */
+static inline ChartPanel chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio);
+static inline void chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h);
+static inline SDL_FPoint chart_panel_apply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp);
+static inline SDL_FPoint chart_panel_unapply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp);
+static inline SDL_FPoint chart_panel_convert_to_screen_coords(SDL_FPoint p, ChartPanel *cp);
+static inline SDL_FPoint chart_panel_convert_from_screen_coords(SDL_FPoint p, ChartPanel *cp);
+static inline void chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor);
+
+/* --------------------------------------------------- Implementations --------------------------------------------------- */
 static inline ChartPanel
 chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
 {

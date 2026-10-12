@@ -1,5 +1,6 @@
 /* This file includes code for managing the application state. There is no attempt at encapsulation for AppState.          */
 
+/* --------------------------------------------------------- API --------------------------------------------------------- */
 typedef struct
 {
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
