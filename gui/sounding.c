@@ -59,6 +59,16 @@ pressure_hpa_temperature_c_to_chart_coords(SondeHectopascal p, SondeCelsius t, C
     return result;
 }
 
+static inline void
+chart_coords_to_pressure_hpa_temperature_c(SDL_FPoint pnt, ChartPanel *cp, SondeHectopascal *p, SondeCelsius *t)
+{
+    f32 y = pnt.y;
+    f32 x = pnt.x;
+
+    p->val = expf(y * (logf(P_MAX) - logf(P_MIN)) +  logf(P_MIN));
+    t->val = (x - cp->ard*(1.0f - y)) * (T_MAX - T_MIN) + T_MIN;
+}
+
 b32
 sounding_update_static_data(AppState *app)
 {

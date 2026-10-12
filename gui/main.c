@@ -133,12 +133,74 @@ chart_panel_apply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp)
 }
 
 static inline SDL_FPoint
+chart_panel_unapply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp)
+{
+    /* unzoom */
+    p.x = (p.x - 0.5f) / cp->zf + 0.5f;
+    p.y = (p.y - 0.5f) / cp->zf + 0.5f;
+
+    /* pan */
+    p.x -= cp->pan.x;
+    p.y -= cp->pan.y;
+
+    return p;
+}
+
+static inline SDL_FPoint
 chart_panel_convert_to_screen_coords(SDL_FPoint p, ChartPanel *cp)
 {
     p.x = p.x * cp->chart_w + cp->x_offset;
     p.y = p.y * cp->chart_h + cp->y_offset;
 
     return p;
+}
+
+static inline SDL_FPoint
+chart_panel_convert_from_screen_coords(SDL_FPoint p, ChartPanel *cp)
+{
+    p.x = (p.x - cp->x_offset) / cp->chart_w;
+    p.y = (p.y - cp->y_offset) / cp->chart_h;
+
+    return p;
+}
+
+static inline void
+chart_panel_clamp_pan(ChartPanel *cp)
+{
+    f32 upper_limit = 1.0f / (2.0f * cp->zf) * (cp->zf - 1.0f);
+    f32 lower_limit = 1.0f / (2.0f * cp->zf) * (1.0f - cp->zf);
+
+    cp->pan.x = cp->pan.x < lower_limit ? lower_limit : cp->pan.x;
+    cp->pan.x = cp->pan.x > upper_limit ? upper_limit : cp->pan.x;
+
+    cp->pan.y = cp->pan.y < lower_limit ? lower_limit : cp->pan.y;
+    cp->pan.y = cp->pan.y > upper_limit ? upper_limit : cp->pan.y;
+}
+
+static inline void
+chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor)
+{
+    SDL_FPoint chart_loc = chart_panel_convert_from_screen_coords(focus_point, cp);
+
+    f32 zf1 = cp->zf;
+    f32 zf2 = zf1 * zoom_factor;
+    zf2 = zf2 < 1.0f ? 1.0f : zf2 > 100.0f ? 100.0f : zf2;
+
+    f32 dx1 = cp->pan.x;
+    f32 dy1 = cp->pan.y;
+
+    f32 x = chart_loc.x;
+    f32 y = chart_loc.y;
+
+    f32 zfac = (1.0f / zf2 - 1.0f / zf1);
+    f32 dx2 = zfac * (x - 0.5f) + dx1;
+    f32 dy2 = zfac * (y - 0.5f) + dy1;
+
+    cp->zf = zf2;
+    cp->pan.x = dx2;
+    cp->pan.y = dy2;
+
+    chart_panel_clamp_pan(cp);
 }
 
 /* ------------------------------------------------------- Modules ------------------------------------------------------- */
@@ -350,10 +412,14 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 SDL_Point loc = { .x = (i32)event->wheel.mouse_x, .y = (i32)event->wheel.mouse_y };
                 if(SDL_PointInRect(&loc, &app->skewt.clipping))
                 {
+                    ChartPanel *cp = &app->skewt;
+                    SDL_FPoint locf = { .x = event->wheel.mouse_x, .y = event->wheel.mouse_y };
+
                     f32 const factor = 1.1f;
                     f32 zf = event->wheel.y > 0.0f ? factor : event->wheel.y < 0.0f ?  1.0f / factor : 1.0f;
-                    app->skewt.zf *= zf;
-                    app->skewt.zf = app->skewt.zf < 1.0f ? 1.0f : app->skewt.zf > 100.0f ? 100.0f : app->skewt.zf;
+
+                    chart_panel_handle_zoom(cp, locf, zf);
+
                     app->skewt.needs_background_update = true;
                 }
 
