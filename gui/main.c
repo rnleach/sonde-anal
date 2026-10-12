@@ -37,177 +37,20 @@
 
 #include "sonde-anal.c"
 
-/* ------------------------------------------------------ App State ------------------------------------------------------ */
-typedef struct
-{
-    /* Screen area properties. */
-    SDL_Rect clipping;      /* x & y are upper left corner, w & h are width and height, all i32                 */
-    f32 chart_w, chart_h;   /* The chart dimensions in screen coordinates.                                      */
-    f32 y_offset, x_offset; /* These are used to center the chart after accounting for different aspect ratios. */
-
-    b32 needs_background_update; /* If the zoom, pan, or window size change, this needs updated. */
-
-    /* Aspect ratio for data - always plot the chart with this aspect ratio. */
-    f32 ard;
-
-    /* Pan and zoom data */
-    SDL_FPoint pan;
-    f32 zf;
-
-} ChartPanel;
-
-typedef struct
-{
-    /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
-    SDL_Window   *window;
-    SDL_Renderer *renderer;
-    SDL_Texture *scratch_layer;
-    TTF_TextEngine *text_engine;
-    TTF_Font *font;
-    struct nk_context *ctx;
-    u64 last_frame;          /* For measuring and controlling actual FPS.    */
-
-    /* Skew-t area */
-    ChartPanel skewt;
-
-    /* UI Element Options*/
-    SDL_FColor background;
-    b32 show_freezing_level;
-
-    /* Debug Window Information. */
-    bool show_debug;
-    f32 mouse_x;
-    f32 mouse_y;
-    f32 frame_time;          /* Time to render a frame in ms */
-
-} AppState;
-
-static AppState global_app_state = {0};
-
-/* ---------------------------------------------- Helpers for chart panels ----------------------------------------------- */
-static inline ChartPanel
-chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
-{
-    ChartPanel cp = {0};
-
-    cp.clipping.x = ulx; cp.clipping.y = uly; cp.clipping.w = w; cp.clipping.h = h;
-    f32 ars = (f32)w / (f32)h;
-
-    cp.ard = aspect_ratio;
-
-    cp.chart_w = ars > cp.ard ? (f32)h * cp.ard : (f32)w;
-    cp.chart_h = ars < cp.ard ? (f32)w / cp.ard : (f32)h;
-    cp.x_offset = ((f32)w - cp.chart_w) * 0.50f;
-    cp.y_offset = ((f32)h - cp.chart_h) * 0.50f;
-
-    cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
-    cp.zf = 1.0f;
-
-    return cp;
-}
-
-static inline void
-chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h)
-{
-    cp->clipping.x = ulx; cp->clipping.y = uly; cp->clipping.w = w; cp->clipping.h = h;
-    f32 ars = (f32)w / (f32)h;
-
-    cp->chart_w = ars > cp->ard ? (f32)h * cp->ard : (f32)w;
-    cp->chart_h = ars < cp->ard ? (f32)w / cp->ard : (f32)h;
-    cp->x_offset = ((f32)w - cp->chart_w) * 0.50f;
-    cp->y_offset = ((f32)h - cp->chart_h) * 0.50f;
-}
-
-static inline SDL_FPoint
-chart_panel_apply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp)
-{
-    /* pan */
-    p.x += cp->pan.x;
-    p.y += cp->pan.y;
-
-    /* zoom */
-    p.x = (p.x - 0.5f) * cp->zf + 0.5f;
-    p.y = (p.y - 0.5f) * cp->zf + 0.5f;
-
-    return p;
-}
-
-static inline SDL_FPoint
-chart_panel_unapply_pan_and_zoom(SDL_FPoint p, ChartPanel *cp)
-{
-    /* unzoom */
-    p.x = (p.x - 0.5f) / cp->zf + 0.5f;
-    p.y = (p.y - 0.5f) / cp->zf + 0.5f;
-
-    /* pan */
-    p.x -= cp->pan.x;
-    p.y -= cp->pan.y;
-
-    return p;
-}
-
-static inline SDL_FPoint
-chart_panel_convert_to_screen_coords(SDL_FPoint p, ChartPanel *cp)
-{
-    p.x = p.x * cp->chart_w + cp->x_offset;
-    p.y = p.y * cp->chart_h + cp->y_offset;
-
-    return p;
-}
-
-static inline SDL_FPoint
-chart_panel_convert_from_screen_coords(SDL_FPoint p, ChartPanel *cp)
-{
-    p.x = (p.x - cp->x_offset) / cp->chart_w;
-    p.y = (p.y - cp->y_offset) / cp->chart_h;
-
-    return p;
-}
-
-static inline void
-chart_panel_clamp_pan(ChartPanel *cp)
-{
-    f32 upper_limit = 1.0f / (2.0f * cp->zf) * (cp->zf - 1.0f);
-    f32 lower_limit = 1.0f / (2.0f * cp->zf) * (1.0f - cp->zf);
-
-    cp->pan.x = cp->pan.x < lower_limit ? lower_limit : cp->pan.x;
-    cp->pan.x = cp->pan.x > upper_limit ? upper_limit : cp->pan.x;
-
-    cp->pan.y = cp->pan.y < lower_limit ? lower_limit : cp->pan.y;
-    cp->pan.y = cp->pan.y > upper_limit ? upper_limit : cp->pan.y;
-}
-
-static inline void
-chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor)
-{
-    SDL_FPoint chart_loc = chart_panel_convert_from_screen_coords(focus_point, cp);
-
-    f32 zf1 = cp->zf;
-    f32 zf2 = zf1 * zoom_factor;
-    zf2 = zf2 < 1.0f ? 1.0f : zf2 > 100.0f ? 100.0f : zf2;
-
-    f32 dx1 = cp->pan.x;
-    f32 dy1 = cp->pan.y;
-
-    f32 x = chart_loc.x;
-    f32 y = chart_loc.y;
-
-    f32 zfac = (1.0f / zf2 - 1.0f / zf1);
-    f32 dx2 = zfac * (x - 0.5f) + dx1;
-    f32 dy2 = zfac * (y - 0.5f) + dy1;
-
-    cp->zf = zf2;
-    cp->pan.x = dx2;
-    cp->pan.y = dy2;
-
-    chart_panel_clamp_pan(cp);
-}
-
 /* ------------------------------------------------------- Modules ------------------------------------------------------- */
+/* Order matters for these includes. */
+#include "chart_panel.c"
+#include "app_state.c"
 #include "graphics.c"
+
+/* Specializations for each panel or drawing area. */
 #include "sounding.c"
 
+/* Embedded Font */
 #include "fonts/Roboto-Bold.h"
+
+/* ------------------------------------------------------ App State ------------------------------------------------------ */
+static AppState global_app_state = {0};
 
 /* --------------------------------------- Helper: make a panel fully transparent ---------------------------------------- */
 static void 
@@ -320,55 +163,53 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     AppState *app = &global_app_state;
     *appstate = app;
 
+    SDL_Window *window;
+    SDL_Renderer *renderer;
     success = SDL_CreateWindowAndRenderer(
                 "Sonde 2",
                 1280,
                 720,
                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY,
-                &app->window,
-                &app->renderer);
+                &window,
+                &renderer);
     StopIf(!success, SDL_Log("CreateWindowAndRenderer failed: %s", SDL_GetError()); return SDL_APP_FAILURE);
 
     /* High-DPI handling */
-    f32 scale = SDL_GetWindowDisplayScale(app->window);
+    f32 scale = SDL_GetWindowDisplayScale(window);
     SDL_Log("Display Scale is: %f", scale);
-    SDL_SetRenderScale(app->renderer, scale, scale);
-    SDL_SetRenderVSync(app->renderer, 1);
+    SDL_SetRenderScale(renderer, scale, scale);
+    SDL_SetRenderVSync(renderer, 1);
 
     /* Set up the font. */
-    app->text_engine = TTF_CreateRendererTextEngine(app->renderer);
-    StopIf(!app->text_engine, SDL_Log("Failure TTF_CreateRendererTextEngine."); return SDL_APP_FAILURE);
-    app->font = load_embedded_ttf_font(FONT_SIZE * scale);
-    StopIf(!app->font, SDL_Log("Failure to load font."); return SDL_APP_FAILURE);
+    TTF_TextEngine *text_engine = TTF_CreateRendererTextEngine(renderer);
+    StopIf(!text_engine, SDL_Log("Failure TTF_CreateRendererTextEngine."); return SDL_APP_FAILURE);
+    TTF_Font *font = load_embedded_ttf_font(FONT_SIZE * scale);
+    StopIf(!font, SDL_Log("Failure to load font."); return SDL_APP_FAILURE);
 
     /* Set up the scratch texture. */
     i32 w, h;
-    SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
-    app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+    SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
+    SDL_Texture *scratch_layer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
     /* Initialize Nuklear */
-    app->ctx = nk_sdl_init(app->window, app->renderer, nk_sdl_allocator());
+    struct nk_context *ctx = nk_sdl_init(window, renderer, nk_sdl_allocator());
 
     /* Fonts for Nuklear */
     {
-        struct nk_font_atlas *atlas = nk_sdl_font_stash_begin(app->ctx);
+        struct nk_font_atlas *atlas = nk_sdl_font_stash_begin(ctx);
         struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, FONT_SIZE * 96.0 / 72.0 * scale, NULL);
-        nk_sdl_font_stash_end(app->ctx);
+        nk_sdl_font_stash_end(ctx);
 
         /* Compensate for the scale so text stays the right visual size */
         font->handle.height /= scale;
-        nk_style_set_font(app->ctx, &font->handle);
+        nk_style_set_font(ctx, &font->handle);
     }
 
-    /* Initialize application state. */
-    app->show_debug = false;
-    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
+    /* Initialize the main application state. */
+    app_state_initialize(app, window, renderer, scratch_layer, text_engine, font, ctx, w, h);
 
-    /* Initialize options. */
-    app->show_freezing_level = true;
-    app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
-
-    sounding_initialize_static_data(app);
+    /* Initialize the drawing areas. */
+    sounding_initialize_static_data(app); /* FIXME: Does this need the whole 'app' object, or just the panel? */
 
     /* Start receiving events - required by the SDL3 backend. */
     nk_input_begin(app->ctx);
