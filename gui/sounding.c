@@ -32,11 +32,12 @@ static f32 const isotherms[] = /* C */
     };
 
 static f32 const isotherm_width = 1.0f;
-static SDL_FColor const isotherm_color = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.0f };
+static SDL_FColor const isotherm_color       = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.0f };
+static SDL_FColor const isotherm_band_color  = { .r = 0.933333f, .g = 0.964705f, .b = 0.917647f, .a = 1.0f };
+static SDL_FColor const freezing_level_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.0f };
 static SDL_FPoint_Pair isotherms_sdl[ECO_ARRAY_SIZE(isotherms)] = {0};
 static TTF_Text *isotherm_labels[ECO_ARRAY_SIZE(isotherms)] = {0};
 static f32 const freezing_level_width = 3.0f;
-static SDL_FColor const freezing_level_color =  { .r = 0.0f, .g = 0.466667f, .b = 0.780392f, .a = 1.0f };
 
 /* Utility functions for coordinate transforms. */
 static inline f32
@@ -154,6 +155,7 @@ static inline b32
 sounding_draw(AppState *app)
 {
     ChartPanel *cp = &app->skewt;
+    MagAllocator alloc_ = app->alloc;
     b32 success = true;
 
     if(cp->needs_background_update)
@@ -166,6 +168,20 @@ sounding_draw(AppState *app)
 
     /* Set up clipping area. */
     SDL_SetRenderClipRect(app->renderer, &cp->clipping);
+
+    /* Draw the filled areas in the background. */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms) - 1; ++i)
+    {
+        if(fmodf(isotherms[i], 20.0f) == 0.0)
+        {
+            SDL_FPoint_Pair pair1 = isotherms_sdl[i + 0];
+            SDL_FPoint_Pair pair2 = isotherms_sdl[i + 1];
+
+            SDL_FPoint vs[4] = { pair1.p1, pair1.p2, pair2.p2, pair2.p1 };
+
+            DrawPolygonThick(app->renderer, vs, ECO_ARRAY_SIZE(vs), 0.0f, isotherm_band_color, isotherm_band_color, alloc_);
+        }
+    }
 
     /* Draw the isobars. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)

@@ -11,6 +11,7 @@ typedef struct
     TTF_Font *font;
     struct nk_context *ctx;
     u64 last_frame;                /* For measuring and controlling actual FPS.    */
+    MagAllocator alloc;
 
     /* Charts and drawing areas */
     ChartPanel skewt;
@@ -50,6 +51,7 @@ app_state_initialize(
     app->text_engine = text_engine;
     app->font = font;
     app->ctx = ctx;
+    app->alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
 
     app->last_frame = 0;
     app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
