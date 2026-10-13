@@ -4,9 +4,10 @@
 typedef struct
 {
     /* Screen area properties. */
-    SDL_Rect clipping;      /* x & y are upper left corner, w & h are width and height, all i32                 */
-    f32 chart_w, chart_h;   /* The chart dimensions in screen coordinates.                                      */
-    f32 y_offset, x_offset; /* These are used to center the chart after accounting for different aspect ratios. */
+    SDL_Rect area;          /* x & y are upper left corner, w & h are width and height, all i32                      */
+    SDL_Rect clipping;      /* This is the actual drawing area based on keeping the chart at the proper aspect ratio */
+    f32 chart_w, chart_h;   /* The chart dimensions in screen coordinates.                                           */
+    f32 y_offset, x_offset; /* These are used to center the chart after accounting for different aspect ratios.      */
 
     b32 needs_background_update; /* If the zoom, pan, or window size change, this needs updated. */
 
@@ -34,7 +35,7 @@ chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
 {
     ChartPanel cp = {0};
 
-    cp.clipping.x = ulx; cp.clipping.y = uly; cp.clipping.w = w; cp.clipping.h = h;
+    cp.area.x = ulx; cp.area.y = uly; cp.area.w = w; cp.area.h = h;
     f32 ars = (f32)w / (f32)h;
 
     cp.ard = aspect_ratio;
@@ -43,6 +44,11 @@ chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
     cp.chart_h = ars < cp.ard ? (f32)w / cp.ard : (f32)h;
     cp.x_offset = ((f32)w - cp.chart_w) * 0.50f;
     cp.y_offset = ((f32)h - cp.chart_h) * 0.50f;
+
+    cp.clipping.x = (i32)cp.x_offset;
+    cp.clipping.y = (i32)cp.y_offset;
+    cp.clipping.w = (i32)cp.chart_w;
+    cp.clipping.h = (i32)cp.chart_h;
 
     cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
     cp.zf = 1.0f;
@@ -53,13 +59,18 @@ chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
 static inline void
 chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h)
 {
-    cp->clipping.x = ulx; cp->clipping.y = uly; cp->clipping.w = w; cp->clipping.h = h;
+    cp->area.x = ulx; cp->area.y = uly; cp->area.w = w; cp->area.h = h;
     f32 ars = (f32)w / (f32)h;
 
     cp->chart_w = ars > cp->ard ? (f32)h * cp->ard : (f32)w;
     cp->chart_h = ars < cp->ard ? (f32)w / cp->ard : (f32)h;
     cp->x_offset = ((f32)w - cp->chart_w) * 0.50f;
     cp->y_offset = ((f32)h - cp->chart_h) * 0.50f;
+
+    cp->clipping.x = (i32)cp->x_offset;
+    cp->clipping.y = (i32)cp->y_offset;
+    cp->clipping.w = (i32)cp->chart_w;
+    cp->clipping.h = (i32)cp->chart_h;
 }
 
 static inline SDL_FPoint

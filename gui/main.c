@@ -10,7 +10,7 @@
 
 #define TARGET_FRAME_RATE_FPS 60
 #define FRAME_TARGET_TIME (1000000000 / TARGET_FRAME_RATE_FPS) /* in nanoseconds for SDL3 */
-#define FONT_SIZE (12.0f)
+#define FONT_SIZE (10.0f)
 
 /* ------------------------------------------------ Nuklear configuration ------------------------------------------------ */
 #define NK_INCLUDE_FIXED_TYPES
@@ -317,7 +317,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                     ChartPanel *cp = &app->skewt;
                     SDL_FPoint locf = { .x = event->wheel.mouse_x, .y = event->wheel.mouse_y };
 
-                    f32 const factor = 1.1f;
+                    f32 const factor = 1.05;
                     f32 zf = event->wheel.y > 0.0f ? factor : event->wheel.y < 0.0f ?  1.0f / factor : 1.0f;
 
                     chart_panel_handle_zoom(cp, locf, zf);
@@ -327,6 +327,8 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
             } break;
 
+        case SDL_EVENT_WINDOW_MAXIMIZED: /* fall through */
+        case SDL_EVENT_WINDOW_RESTORED:  /* fall through */
         case SDL_EVENT_WINDOW_RESIZED:
             {
                 /* Rebuild the scratch texture. */

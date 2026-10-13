@@ -1,7 +1,7 @@
 /* This file has everything for drawing the sounding area. */
 
 #define P_MAX 1050.0f
-#define P_MIN 100.0f
+#define P_MIN 98.0f
 
 #define T_MAX 51.5f
 #define T_MIN -46.5f
@@ -227,15 +227,15 @@ sounding_draw(AppState *app)
         i32 tw, th;
         TTF_GetTextSize(isotherm_labels[i], &tw, &th);
 
-        SDL_FRect trect1 = { .x = p1.x - (f32)(tw / 2), .y = p1.y - (f32)(th / 2), .w = (f32)(tw), .h = (f32)(th) };
-        SDL_FRect trect2 = { .x = p2.x - (f32)(tw / 2), .y = p2.y - (f32)(th / 2), .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect1 = { .x = p1.x,             .y = p1.y - (f32)(th), .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect2 = { .x = p2.x - (f32)(tw), .y = p2.y,             .w = (f32)(tw), .h = (f32)(th) };
 
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect1);
         SDL_RenderFillRect(app->renderer, &trect2);
         SDL_SetRenderDrawColorFloat(app->renderer, isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
-        TTF_DrawRendererText(isotherm_labels[i], pair.p1.x - (f32)(tw / 2),  pair.p1.y - (f32)(th / 2));
-        TTF_DrawRendererText(isotherm_labels[i], pair.p2.x - (f32)(tw / 2),  pair.p2.y - (f32)(th / 2));
+        TTF_DrawRendererText(isotherm_labels[i], trect1.x, trect1.y);
+        TTF_DrawRendererText(isotherm_labels[i], trect2.x, trect2.y);
     }
 
     /* Reset the clipping rect and return. */
