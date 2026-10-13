@@ -217,6 +217,9 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     return SDL_APP_CONTINUE;
 }
 
+i32 const skew_t_context_menu_width = 150;
+i32 const skew_t_context_menu_height = 100;
+
 SDL_AppResult 
 SDL_AppEvent(void *appstate, SDL_Event *event)
 {
@@ -225,6 +228,50 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
     SDL_ConvertEventToRenderCoordinates(app->renderer, event);
 
     nk_sdl_handle_event(app->ctx, event);
+
+    /* Watch specifically for Right Mouse Clicks to handle context menus */
+    if(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) 
+    {
+
+        SDL_Point loc = { .x = (i32)event->button.x, .y = (i32)event->button.y };
+        SDL_FPoint locf = { .x = event->button.x, .y = event->button.y };
+        app->mouse_loc = locf;
+
+        /* Check for right click in Skew-T area */
+        if(SDL_PointInRect(&loc, &app->skewt.clipping))
+        {
+            app->context_menu_location = loc;
+            app->show_skew_t_context_menu = true;
+            return SDL_APP_CONTINUE;  /* Consume this event so nothing else handles it! */
+        }
+    }
+
+    /* Watch specifically for Left Mouse Clicks to handle closing context menus */
+    if(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT) 
+    {
+
+        SDL_Point loc = { .x = (i32)event->button.x, .y = (i32)event->button.y };
+        SDL_FPoint locf = { .x = event->button.x, .y = event->button.y };
+        app->mouse_loc = locf;
+
+        SDL_Rect skew_t_context_menu_rect =
+            {
+                .x = app->context_menu_location.x,
+                .y = app->context_menu_location.y,
+                .w = skew_t_context_menu_width,
+                .h = skew_t_context_menu_height
+            };
+
+        /* Check for left click outside menu area */
+        if(!SDL_PointInRect(&loc, &skew_t_context_menu_rect))
+        {
+            app->show_skew_t_context_menu = false;
+            return SDL_APP_CONTINUE;  /* Consume this event so nothing else handles it! */
+        }
+    }
+
+    /* Skip event processing of interacting with Nuklear UI elements. */
+    if(nk_item_is_any_active(app->ctx)) { return SDL_APP_CONTINUE; }
 
     switch (event->type)
     {
@@ -380,32 +427,45 @@ SDL_AppIterate(void *appstate)
     }
 
     /* --- Skew-t area popup menu --- */
+    struct nk_rect skewt_context_menu_area =
     {
-        struct nk_rect context_menu_area =
-        {
-            .x = (f32)app->skewt.clipping.x,
-            .y = (f32)app->skewt.clipping.y + bar_h,
-            .w = (f32)app->skewt.clipping.w,
-            .h = (f32)app->skewt.clipping.h - bar_h,
-        };
+        .x = (f32)app->skewt.clipping.x,
+        .y = (f32)app->skewt.clipping.y + bar_h,
+        .w = (f32)app->skewt.clipping.w,
+        .h = (f32)app->skewt.clipping.h - bar_h,
+    };
 
-        if(nk_begin(ctx, "Skewt-Context", context_menu_area, NK_WINDOW_BORDER))
+    if(app->show_skew_t_context_menu)
+    {
+        if(nk_begin(ctx, "Skewt-Context-Area", skewt_context_menu_area, NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_INPUT | NK_WINDOW_NOT_INTERACTIVE))
         {
-
             /* Make sure we can see the popup menu. */
             nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
             nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
 
-            if (nk_contextual_begin(ctx, 0, nk_vec2(150, 120), context_menu_area)) 
+            struct nk_rect popup_bounds = nk_rect(
+                    app->context_menu_location.x,
+                    app->context_menu_location.y - bar_h,
+                    skew_t_context_menu_width,
+                    skew_t_context_menu_height
+                );
+            
+            if(nk_popup_begin(ctx, NK_POPUP_STATIC, "SkewTContextMenu", NK_WINDOW_BORDER, popup_bounds))
             {
-                nk_layout_row_dynamic(ctx, 25, 1);
-
+                nk_layout_row_dynamic(app->ctx, 25, 1);
+                
                 if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) 
                 { 
-                    nk_contextual_close(ctx); 
+                    app->show_skew_t_context_menu = false; /* close menu */
+                    nk_popup_close(ctx);
                 }
 
-                nk_contextual_end(ctx);
+                nk_popup_end(ctx);
+            }
+            else
+            {
+                /* If nk_popup_begin returns false, user clicked outside of the menu to close it */
+                app->show_skew_t_context_menu = false;
             }
 
             nk_style_pop_color(ctx);
@@ -419,12 +479,13 @@ SDL_AppIterate(void *appstate)
     {
         style_debug_panel(ctx);   /* apply debug style */
 
-        if(nk_begin(ctx, "Debug", nk_rect(300, 150, 320, 200), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
+        if(nk_begin(ctx, "Debug", nk_rect(150, 150, 320, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
         {
             nk_layout_row_dynamic(ctx, 25, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, " mouse_loc: (%.1f, %.1f)", app->mouse_loc.x, app->mouse_loc.y);
-            nk_labelf(ctx, NK_TEXT_LEFT, "frame rate: %.1f FPS", frame_rate);
-            nk_labelf(ctx, NK_TEXT_LEFT, "frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_loc: (%.1f, %.1f)", app->mouse_loc.x, app->mouse_loc.y);
+            nk_labelf(ctx, NK_TEXT_LEFT, " context_loc: (%d, %d)", app->context_menu_location.x, app->context_menu_location.y);
+            nk_labelf(ctx, NK_TEXT_LEFT, "  frame rate: %.1f FPS", frame_rate);
+            nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
 
             nk_labelf(ctx, NK_TEXT_LEFT, "cp->y_offset: %.1f", app->skewt.y_offset);
             nk_labelf(ctx, NK_TEXT_LEFT, "cp->x_offset: %.1f", app->skewt.x_offset);

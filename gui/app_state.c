@@ -14,6 +14,8 @@ typedef struct
 
     /* Charts and drawing areas */
     ChartPanel skewt;
+    SDL_Point context_menu_location;
+    b32 show_skew_t_context_menu;
 
     /* Useful UI state for things like panning */
     SDL_FPoint mouse_loc;
@@ -41,6 +43,7 @@ app_state_initialize(
         i32 h                             /* Window height */
     )
 {
+    /* Base UI stuff */
     app->window = window;
     app->renderer = renderer;
     app->scratch_layer = scratch_layer;
@@ -49,8 +52,11 @@ app_state_initialize(
     app->ctx = ctx;
 
     app->last_frame = 0;
-    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
     app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
+
+    /* Skew-t panel state */
+    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
     app->show_freezing_level = true;
+    app->show_skew_t_context_menu = false;
 }
 
