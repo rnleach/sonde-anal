@@ -87,11 +87,28 @@ sounding_update_static_data(AppState *app) /* FIXME: Do I really need the whole 
         isobars_sdl[i] = screen_coords;
     }
 
+
+    /* Find pressure bounds. */
+    SDL_FPoint lower_right = { .x = 1.0f, .y = 1.0f };
+    SDL_FPoint upper_left = { .x = 0.0f, .y = 0.0f };
+    lower_right = chart_panel_unapply_pan_and_zoom(lower_right, cp);
+    upper_left = chart_panel_unapply_pan_and_zoom(upper_left, cp);
+
+    SondeHectopascal p_max = {0};
+    SondeHectopascal p_min = {0};
+    SondeCelsius dummy = {0};
+
+    chart_coords_to_pressure_hpa_temperature_c(lower_right, cp, &p_max, &dummy);
+    chart_coords_to_pressure_hpa_temperature_c(upper_left, cp, &p_min, &dummy);
+
+    p_max.val = p_max.val > P_MAX ? P_MAX : p_max.val;
+    p_min.val = p_min.val < P_MIN ? P_MIN : p_min.val;
+
     /* Calculate the screen coordinates of the isotherms. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms); ++i)
     {
-        SDL_FPoint chart_p1 = pressure_hpa_temperature_c_to_chart_coords((SondeHectopascal){ .val = P_MAX }, (SondeCelsius){ .val = isotherms[i] }, cp);
-        SDL_FPoint chart_p2 = pressure_hpa_temperature_c_to_chart_coords((SondeHectopascal){ .val = P_MIN }, (SondeCelsius){ .val = isotherms[i] }, cp);
+        SDL_FPoint chart_p1 = pressure_hpa_temperature_c_to_chart_coords(p_max, (SondeCelsius){ .val = isotherms[i] }, cp);
+        SDL_FPoint chart_p2 = pressure_hpa_temperature_c_to_chart_coords(p_min, (SondeCelsius){ .val = isotherms[i] }, cp);
 
         chart_p1 = chart_panel_apply_pan_and_zoom(chart_p1, cp);
         chart_p2 = chart_panel_apply_pan_and_zoom(chart_p2, cp);
@@ -166,10 +183,6 @@ sounding_draw(AppState *app)
 
         SDL_FPoint_Pair pair = isotherms_sdl[i];
         success &= DrawLineThickRoundedAA(app->renderer, pair.p1, pair.p2, width, color);
-        i32 tw, th;
-        TTF_GetTextSize(isotherm_labels[i], &tw, &th);
-        TTF_DrawRendererText(isotherm_labels[i], pair.p1.x - (f32)(tw / 4),  pair.p1.y - (f32)th);
-        TTF_DrawRendererText(isotherm_labels[i], pair.p2.x - (f32)(tw / 4),  pair.p2.y);
     }
 
     /* ---------- Do a second pass to draw the labels on top of everything else in the background. */
@@ -177,7 +190,7 @@ sounding_draw(AppState *app)
     /* Label the isobars */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
-        SDL_FPoint p1 = {.x = cp->x_offset,     .y = isobars_sdl[i].y };
+        SDL_FPoint p1 = {.x = cp->x_offset, .y = isobars_sdl[i].y };
 
         i32 tw, th;
         TTF_GetTextSize(isobar_labels[i], &tw, &th);
@@ -198,15 +211,15 @@ sounding_draw(AppState *app)
         i32 tw, th;
         TTF_GetTextSize(isotherm_labels[i], &tw, &th);
 
-        SDL_FRect trect1 = { .x = p1.x - (f32)(tw / 4), .y = p1.y - (f32)(th), .w = (f32)(tw), .h = (f32)(th) };
-        SDL_FRect trect2 = { .x = p2.x - (f32)(tw / 4), .y = p2.y, .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect1 = { .x = p1.x - (f32)(tw / 2), .y = p1.y - (f32)(th / 2), .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect2 = { .x = p2.x - (f32)(tw / 2), .y = p2.y - (f32)(th / 2), .w = (f32)(tw), .h = (f32)(th) };
 
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect1);
         SDL_RenderFillRect(app->renderer, &trect2);
         SDL_SetRenderDrawColorFloat(app->renderer, isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
-        TTF_DrawRendererText(isotherm_labels[i], pair.p1.x - (f32)(tw / 4),  pair.p1.y - (f32)th);
-        TTF_DrawRendererText(isotherm_labels[i], pair.p2.x - (f32)(tw / 4),  pair.p2.y);
+        TTF_DrawRendererText(isotherm_labels[i], pair.p1.x - (f32)(tw / 2),  pair.p1.y - (f32)(th / 2));
+        TTF_DrawRendererText(isotherm_labels[i], pair.p2.x - (f32)(tw / 2),  pair.p2.y - (f32)(th / 2));
     }
 
     /* Reset the clipping rect and return. */
