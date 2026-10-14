@@ -12,7 +12,13 @@ typedef struct
     struct nk_context *ctx;
     u64 last_frame;                  /* For measuring and controlling actual FPS.                                         */
     i32 window_width, window_height; /* Fore detecting resizes. SDL_AppEvent and SDL_AppIterate are out of sync on sizes. */
-    MagAllocator alloc;
+    MagAllocator scratch_alloc;
+    MagAllocator data_alloc;
+
+    /* Sounding data - actual data */
+    SondeSounding **sndgs;
+    i32 n_soundings;
+    i32 current_sndg;
 
     /* Charts and drawing areas */
     ChartPanel skewt;
@@ -54,10 +60,15 @@ app_state_initialize(
     app->text_engine = text_engine;
     app->font = font;
     app->ctx = ctx;
-    app->alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
+    app->scratch_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
+    app->data_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
 
     app->last_frame = 0;
     app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
+
+    /* Sounding data - actual data */
+    app->sndgs = NULL;
+    app->current_sndg = -1;
 
     /* Skew-t panel state */
     app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);

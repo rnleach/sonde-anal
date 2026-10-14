@@ -215,7 +215,7 @@ static inline b32
 sounding_draw(AppState *app)
 {
     ChartPanel *cp = &app->skewt;
-    MagAllocator alloc_ = app->alloc;
+    MagAllocator alloc_ = app->scratch_alloc;
     b32 success = true;
 
     if(cp->needs_background_update)

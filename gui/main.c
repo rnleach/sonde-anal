@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_dialog.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #define SDL_MAIN_USE_CALLBACKS
@@ -124,6 +125,76 @@ load_embedded_ttf_font(f32 ptsize)
 
     return font;
 }
+
+/* -------------------------------------------- Helper: Load a file callback --------------------------------------------- */
+/* This callback handles the chosen file path */
+void SDLCALL 
+load_bufkit_file_callback(void *userdata, char const * const *filelist, i32 filter)
+{
+    AppState *app = userdata;
+
+    if(!filelist)
+    {
+        /* An error occurred */
+        SDL_Log("Error opening file dialog: %s", SDL_GetError());
+    }
+    else if(!*filelist)
+    {
+        /* The user cancelled the dialog */
+        SDL_Log("User cancelled the operation.");
+    }
+    else
+    {
+        /* The user selected a file (or files)            */
+        /* filelist is a null-terminated array of strings */
+        char const *chosen_file_path = filelist[0];
+        SDL_Log("User selected file: %s", chosen_file_path);
+
+        MagAllocator scratch_ = app->scratch_alloc;
+        MagAllocator *scratch = &scratch_;
+        MagAllocator *data = &app->data_alloc;
+
+        eco_arena_reset(data);
+
+        ElkStr fn_str = elk_str_from_cstring((char *)chosen_file_path);
+        ElkStr f_string = eco_file_slurp_text(chosen_file_path, scratch);
+
+        SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(data, f_string, fn_str);
+        sonde_sounding_list_fill_in_profiles(
+                sndgs,
+                SONDE_PC_DEW_POINT
+                    | SONDE_PC_WET_BULB
+                    | SONDE_PC_VIRTUAL_TEMPERATURE 
+                    | SONDE_PC_THETA
+                    | SONDE_PC_THETA_E 
+                    | SONDE_PC_RH 
+                    | SONDE_PC_RH_ICE 
+                    | SONDE_PC_FROST_POINT
+                    | SONDE_PC_WIND_UV
+                    | SONDE_PC_WIND_SPEED_DIR
+            );
+
+        app->n_soundings = 0;
+        SondeSoundingList *curr = sndgs;
+        while(curr)
+        {
+            app->n_soundings += 1;
+            curr = curr->next;
+        }
+
+        app->sndgs = eco_arena_nmalloc(data, app->n_soundings, SondeSounding *);
+        app->current_sndg = 0;
+
+        curr = sndgs;
+        i32 i = 0;
+        while(curr)
+        {
+            app->sndgs[i++] = curr->snd;
+            curr = curr->next;
+        }
+    }
+}
+
 /* --------------------------------------------------- SDL3 Callbacks ---------------------------------------------------- */
 
 f32 
@@ -290,6 +361,15 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
             {
                 if (event->key.key == SDLK_ESCAPE) { return SDL_APP_SUCCESS; }
                 if (event->key.key == SDLK_F1) { app->show_debug = !app->show_debug; }
+                if (event->key.key == SDLK_RIGHT)
+                {
+                    app->current_sndg = (app->current_sndg + 1) % app->n_soundings;
+                }
+                if (event->key.key == SDLK_LEFT)
+                {
+                    app->current_sndg -= 1;
+                    app->current_sndg = app->current_sndg < 0 ? app->n_soundings - 1 : app->current_sndg;
+                }
             } break;
 
         case SDL_EVENT_MOUSE_MOTION:
@@ -410,27 +490,43 @@ SDL_AppIterate(void *appstate)
 
             if (nk_button_label(ctx, "Load"))
             {
-                SDL_Log("Load");
+                /* Define an optional file filter */
+                SDL_DialogFileFilter const filters[] =
+                    {
+                        { "Bufkit Files (*.buf)", "buf" },
+                        { "All Files", "*" }
+                    };
+
+                SDL_ShowOpenFileDialog(
+                    load_bufkit_file_callback, /* Open callback function                             */
+                    app,                       /* Optional userdata pointer to pass context          */
+                    app->window,               /* Your SDL_Window * pointer (makes it modal)         */
+                    filters,                   /* File filters pointer                               */
+                    2,                         /* Number of filters                                  */
+                    NULL,                      /* Default start location (NULL defaults to home/cwd) */
+                    false                      /* allow_many (false restricts to picking 1 file)     */
+                );
             }
 
             if (nk_button_label(ctx, "|<"))
             {
-                SDL_Log("First");
+                app->current_sndg = 0;
             }
 
             if (nk_button_label(ctx, "<"))
             {
-                SDL_Log("Previous");
+                app->current_sndg -= 1;
+                app->current_sndg = app->current_sndg < 0 ? app->n_soundings - 1 : app->current_sndg;
             }
 
             if (nk_button_label(ctx, ">"))
             {
-                SDL_Log("Next");
+                app->current_sndg = (app->current_sndg + 1) % app->n_soundings;
             }
 
             if (nk_button_label(ctx, ">|"))
             {
-                SDL_Log("Last");
+                app->current_sndg = app->n_soundings - 1;
             }
 
         }
@@ -507,25 +603,12 @@ SDL_AppIterate(void *appstate)
         {
             nk_layout_row_dynamic(ctx, 25, 1);
             nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_loc: (%.2f, %.2f)", app->mouse_loc.x, app->mouse_loc.y);
-            nk_labelf(ctx, NK_TEXT_LEFT, " context_loc: (%d, %d)", app->context_menu_location.x, app->context_menu_location.y);
             nk_labelf(ctx, NK_TEXT_LEFT, "  frame rate: %.2f FPS", frame_rate);
             nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.2f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
 
-            nk_labelf(ctx, NK_TEXT_LEFT, "    cp->area: %4d %4d %4d %4d", app->skewt.area.x, app->skewt.area.y, app->skewt.area.w, app->skewt.area.h);
-            nk_labelf(ctx, NK_TEXT_LEFT, "cp->clipping: %4d %4d %4d %4d", app->skewt.clipping.x, app->skewt.clipping.y, app->skewt.clipping.w, app->skewt.clipping.h);
+            nk_labelf(ctx, NK_TEXT_LEFT, " n_soundings: %d", app->n_soundings);
+            nk_labelf(ctx, NK_TEXT_LEFT, "current_sndg: %d", app->current_sndg);
 
-            nk_labelf(ctx, NK_TEXT_LEFT, " scale_x & y: %.2f %.2f", scale_x, scale_y);
-
-            nk_labelf(ctx, NK_TEXT_LEFT, "cp->y_offset: %.2f", app->skewt.y_offset);
-            nk_labelf(ctx, NK_TEXT_LEFT, "cp->x_offset: %.2f", app->skewt.x_offset);
-
-            nk_labelf(ctx, NK_TEXT_LEFT, "     cp->ard: %.2f", app->skewt.ard);
-            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_w: %.2f", app->skewt.chart_w);
-            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_h: %.2f", app->skewt.chart_h);
-
-            nk_labelf(ctx, NK_TEXT_LEFT, "      cp->zf: %.2f", app->skewt.zf);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.x: %.2f", app->skewt.pan.x);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.y: %.2f", app->skewt.pan.y);
         }
         nk_end(ctx);
     }
