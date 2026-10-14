@@ -459,6 +459,8 @@ SDL_AppIterate(void *appstate)
 
         /* Rescale the sounding area. */
         chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
+        app->window_width = w;
+        app->window_height = h;
     }
 
     /* ---- Clear + draw “game” background ---- */
