@@ -32,10 +32,16 @@ static f32 const isotherms[] = /* C */
     };
 
 static f32 const isotherm_width = 1.0f;
-static SDL_FColor const isotherm_color       = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.0f };
-static SDL_FColor const isotherm_band_color  = { .r = 0.933333f, .g = 0.964705f, .b = 0.917647f, .a = 1.0f };
-static SDL_FColor const freezing_level_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.0f };
+
+static SDL_FColor const isotherm_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
+static SDL_FColor const isotherm_band_color         = { .r = 0.933333f, .g = 0.964705f, .b = 0.917647f, .a = 1.00f };
+static SDL_FColor const freezing_level_color        = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.00f };
+static SDL_FColor const hail_growth_zone_color      = { .r = 0.0f,      .g = 0.803921f, .b = 0.803922f, .a = 0.55f };
+static SDL_FColor const dendritic_growth_zone_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780393f, .a = 0.55f };
+
 static SDL_FPoint_Pair isotherms_sdl[ECO_ARRAY_SIZE(isotherms)] = {0};
+static SDL_FPoint hail_growth_zone_points_sdl[4] = {0};
+static SDL_FPoint dendritic_growth_zone_points_sdl[4] = {0};
 static TTF_Text *isotherm_labels[ECO_ARRAY_SIZE(isotherms)] = {0};
 static f32 const freezing_level_width = 3.0f;
 
@@ -128,6 +134,52 @@ sounding_update_static_data(ChartPanel *cp)
         isotherms_sdl[i] = (SDL_FPoint_Pair){ .p1 = screen_p1, .p2 = screen_p2 };
     }
 
+    /* Calculate the screen coordinates of the hail growth zone */
+    {
+        SDL_FPoint chart_p1 = pressure_hpa_temperature_c_to_chart_coords(p_max, (SondeCelsius){ .val = -10.0f }, cp);
+        SDL_FPoint chart_p2 = pressure_hpa_temperature_c_to_chart_coords(p_min, (SondeCelsius){ .val = -10.0f }, cp);
+        SDL_FPoint chart_p3 = pressure_hpa_temperature_c_to_chart_coords(p_min, (SondeCelsius){ .val = -30.0f }, cp);
+        SDL_FPoint chart_p4 = pressure_hpa_temperature_c_to_chart_coords(p_max, (SondeCelsius){ .val = -30.0f }, cp);
+
+        chart_p1 = chart_panel_apply_pan_and_zoom(chart_p1, cp);
+        chart_p2 = chart_panel_apply_pan_and_zoom(chart_p2, cp);
+        chart_p3 = chart_panel_apply_pan_and_zoom(chart_p3, cp);
+        chart_p4 = chart_panel_apply_pan_and_zoom(chart_p4, cp);
+
+        SDL_FPoint screen_p1 = chart_panel_convert_to_screen_coords(chart_p1, cp);
+        SDL_FPoint screen_p2 = chart_panel_convert_to_screen_coords(chart_p2, cp);
+        SDL_FPoint screen_p3 = chart_panel_convert_to_screen_coords(chart_p3, cp);
+        SDL_FPoint screen_p4 = chart_panel_convert_to_screen_coords(chart_p4, cp);
+
+        hail_growth_zone_points_sdl[0] = screen_p1;
+        hail_growth_zone_points_sdl[1] = screen_p2;
+        hail_growth_zone_points_sdl[2] = screen_p3;
+        hail_growth_zone_points_sdl[3] = screen_p4;
+    }
+
+    /* Calculate the screen coordinates of the dendritic growth zone */
+    {
+        SDL_FPoint chart_p1 = pressure_hpa_temperature_c_to_chart_coords(p_max, (SondeCelsius){ .val = -12.0f }, cp);
+        SDL_FPoint chart_p2 = pressure_hpa_temperature_c_to_chart_coords(p_min, (SondeCelsius){ .val = -12.0f }, cp);
+        SDL_FPoint chart_p3 = pressure_hpa_temperature_c_to_chart_coords(p_min, (SondeCelsius){ .val = -18.0f }, cp);
+        SDL_FPoint chart_p4 = pressure_hpa_temperature_c_to_chart_coords(p_max, (SondeCelsius){ .val = -18.0f }, cp);
+
+        chart_p1 = chart_panel_apply_pan_and_zoom(chart_p1, cp);
+        chart_p2 = chart_panel_apply_pan_and_zoom(chart_p2, cp);
+        chart_p3 = chart_panel_apply_pan_and_zoom(chart_p3, cp);
+        chart_p4 = chart_panel_apply_pan_and_zoom(chart_p4, cp);
+
+        SDL_FPoint screen_p1 = chart_panel_convert_to_screen_coords(chart_p1, cp);
+        SDL_FPoint screen_p2 = chart_panel_convert_to_screen_coords(chart_p2, cp);
+        SDL_FPoint screen_p3 = chart_panel_convert_to_screen_coords(chart_p3, cp);
+        SDL_FPoint screen_p4 = chart_panel_convert_to_screen_coords(chart_p4, cp);
+
+        dendritic_growth_zone_points_sdl[0] = screen_p1;
+        dendritic_growth_zone_points_sdl[1] = screen_p2;
+        dendritic_growth_zone_points_sdl[2] = screen_p3;
+        dendritic_growth_zone_points_sdl[3] = screen_p4;
+    }
+
     return true;
 }
 
@@ -177,10 +229,10 @@ sounding_draw(AppState *app)
     /* Set up clipping area. */
     SDL_SetRenderClipRect(app->renderer, &cp->clipping);
 
-    /* Draw the filled areas in the background. */
+    /* Draw the filled bands in the background. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms) - 1; ++i)
     {
-        if(fmodf(isotherms[i], 20.0f) == 0.0)
+        if(fmodf(isotherms[i], 20.0f) == 0.0f)
         {
             SDL_FPoint_Pair pair1 = isotherms_sdl[i + 0];
             SDL_FPoint_Pair pair2 = isotherms_sdl[i + 1];
@@ -189,6 +241,18 @@ sounding_draw(AppState *app)
 
             DrawPolygonThick(app->renderer, vs, ECO_ARRAY_SIZE(vs), 0.0f, isotherm_band_color, isotherm_band_color, alloc_);
         }
+    }
+
+    /* Draw the hail growth zone */
+    if(app->show_hail_growth_zone)
+    {
+        DrawPolygonThick(app->renderer, hail_growth_zone_points_sdl, ECO_ARRAY_SIZE(hail_growth_zone_points_sdl), 0.0f, hail_growth_zone_color, hail_growth_zone_color, alloc_);
+    }
+
+    /* Draw the dendritic growth zone */
+    if(app->show_dendritic_growth_zone)
+    {
+        DrawPolygonThick(app->renderer, dendritic_growth_zone_points_sdl, ECO_ARRAY_SIZE(dendritic_growth_zone_points_sdl), 0.0f, dendritic_growth_zone_color, dendritic_growth_zone_color, alloc_);
     }
 
     /* Draw the isobars. */

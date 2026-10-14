@@ -25,6 +25,8 @@ typedef struct
     /* UI Element Options*/
     SDL_FColor background;
     b32 show_freezing_level;
+    b32 show_hail_growth_zone;
+    b32 show_dendritic_growth_zone;
 
     /* Debug Window Information. */
     bool show_debug;
@@ -60,6 +62,8 @@ app_state_initialize(
     /* Skew-t panel state */
     app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
     app->show_freezing_level = true;
+    app->show_hail_growth_zone = true;
+    app->show_dendritic_growth_zone = true;
     app->show_skew_t_context_menu = false;
 }
 

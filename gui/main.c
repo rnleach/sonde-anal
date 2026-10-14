@@ -177,6 +177,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     /* High-DPI handling */
     f32 scale = SDL_GetWindowDisplayScale(window);
     SDL_Log("Display Scale is: %f", scale);
+    SDL_Log("Display Refresh rate: %f", GetCurrentWindowRefreshRate(window));
     SDL_SetRenderScale(renderer, scale, scale);
     SDL_SetRenderVSync(renderer, 1);
 
@@ -350,7 +351,7 @@ SDL_AppIterate(void *appstate)
     AppState *app = appstate;
     struct nk_context *ctx = app->ctx;
 
-    u64 const target_frame_rate_ns = SDL_NS_PER_SECOND / 60;
+    u64 const target_frame_rate_ns = SDL_NS_PER_SECOND / 60 - 1000;
     u64 start_time = SDL_GetTicksNS();
     u64 elapsed = start_time - app->last_frame;
 
@@ -466,6 +467,18 @@ SDL_AppIterate(void *appstate)
                 nk_layout_row_dynamic(app->ctx, 25, 1);
                 
                 if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) 
+                { 
+                    app->show_skew_t_context_menu = false; /* close menu */
+                    nk_popup_close(ctx);
+                }
+
+                if(nk_checkbox_label(ctx, "Show Hail Growth", &app->show_hail_growth_zone)) 
+                { 
+                    app->show_skew_t_context_menu = false; /* close menu */
+                    nk_popup_close(ctx);
+                }
+
+                if(nk_checkbox_label(ctx, "Show Dendritic Growth", &app->show_dendritic_growth_zone)) 
                 { 
                     app->show_skew_t_context_menu = false; /* close menu */
                     nk_popup_close(ctx);
