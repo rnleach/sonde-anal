@@ -10,7 +10,8 @@ typedef struct
     TTF_TextEngine *text_engine;
     TTF_Font *font;
     struct nk_context *ctx;
-    u64 last_frame;                /* For measuring and controlling actual FPS.    */
+    u64 last_frame;                  /* For measuring and controlling actual FPS.                                         */
+    i32 window_width, window_height; /* Fore detecting resizes. SDL_AppEvent and SDL_AppIterate are out of sync on sizes. */
     MagAllocator alloc;
 
     /* Charts and drawing areas */

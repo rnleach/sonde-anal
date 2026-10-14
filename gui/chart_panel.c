@@ -30,6 +30,27 @@ static inline void chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_poin
 static inline void chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
+static inline void
+chart_panel_internal_manage_clipping(ChartPanel *cp)
+{
+    SDL_FPoint ul = { .x = 0.0f, .y = 0.0f };
+    SDL_FPoint lr = { .x = 1.0f, .y = 1.0f };
+
+    ul = chart_panel_apply_pan_and_zoom(ul, cp);
+    lr = chart_panel_apply_pan_and_zoom(lr, cp);
+
+    ul = chart_panel_convert_to_screen_coords(ul, cp);
+    lr = chart_panel_convert_to_screen_coords(lr, cp);
+
+    SDL_Point uli = { .x = (i32)ul.x, .y = (i32)ul.y };
+    SDL_Point whi = { .x = (i32)(lr.x - ul.x), .y = (i32)(lr.y - ul.y) };
+
+    cp->clipping.x = uli.x > cp->area.x ? uli.x : cp->area.x;
+    cp->clipping.y = uli.y > cp->area.y ? uli.y : cp->area.y;
+    cp->clipping.w = whi.x < cp->area.w ? whi.x : cp->area.w;
+    cp->clipping.h = whi.y < cp->area.h ? whi.y : cp->area.h;
+}
+
 static inline ChartPanel
 chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
 {
@@ -45,13 +66,12 @@ chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
     cp.x_offset = ((f32)w - cp.chart_w) * 0.50f;
     cp.y_offset = ((f32)h - cp.chart_h) * 0.50f;
 
-    cp.clipping.x = (i32)cp.x_offset;
-    cp.clipping.y = (i32)cp.y_offset;
-    cp.clipping.w = (i32)cp.chart_w;
-    cp.clipping.h = (i32)cp.chart_h;
-
-    cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
     cp.zf = 1.0f;
+    cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
+
+    chart_panel_internal_manage_clipping(&cp);
+
+    cp.needs_background_update = true;
 
     return cp;
 }
@@ -67,10 +87,9 @@ chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i3
     cp->x_offset = ((f32)w - cp->chart_w) * 0.50f;
     cp->y_offset = ((f32)h - cp->chart_h) * 0.50f;
 
-    cp->clipping.x = (i32)cp->x_offset;
-    cp->clipping.y = (i32)cp->y_offset;
-    cp->clipping.w = (i32)cp->chart_w;
-    cp->clipping.h = (i32)cp->chart_h;
+    chart_panel_internal_manage_clipping(cp);
+
+    cp->needs_background_update = true;
 }
 
 static inline SDL_FPoint
@@ -120,7 +139,7 @@ chart_panel_convert_from_screen_coords(SDL_FPoint p, ChartPanel *cp)
 }
 
 static inline void
-chart_panel_clamp_pan(ChartPanel *cp)
+chart_panel_internal_clamp_pan(ChartPanel *cp)
 {
     f32 upper_limit = 1.0f / (2.0f * cp->zf) * (cp->zf - 1.0f);
     f32 lower_limit = 1.0f / (2.0f * cp->zf) * (1.0f - cp->zf);
@@ -155,7 +174,10 @@ chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor)
     cp->pan.x = dx2;
     cp->pan.y = dy2;
 
-    chart_panel_clamp_pan(cp);
+    chart_panel_internal_clamp_pan(cp);
+    chart_panel_internal_manage_clipping(cp);
+
+    cp->needs_background_update = true;
 }
 
 static inline void 
@@ -170,6 +192,9 @@ chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to)
     cp->pan.x += dx;
     cp->pan.y += dy;
 
-    chart_panel_clamp_pan(cp);
+    chart_panel_internal_clamp_pan(cp);
+    chart_panel_internal_manage_clipping(cp);
+
+    cp->needs_background_update = true;
 }
 

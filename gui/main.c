@@ -188,7 +188,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* Set up the scratch texture. */
     i32 w, h;
-    SDL_GetCurrentRenderOutputSize(renderer, &w, &h);
+    SDL_GetRenderOutputSize(renderer, &w, &h);
     SDL_Texture *scratch_layer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
     /* Initialize Nuklear */
@@ -223,6 +223,11 @@ i32 const skew_t_context_menu_height = 100;
 SDL_AppResult 
 SDL_AppEvent(void *appstate, SDL_Event *event)
 {
+    /* SDL_AppEvent and SDL_AppIterate are out of sync when it comes to window resizes render state in general, so you
+     * can't query dimensions here and have them still be correct when SDL_AppIterate is called. The coordinates and
+     * renderer state always represent the state of the renderer on the last frame, not the one you're going into.
+     */
+
     AppState *app = appstate;
 
     SDL_ConvertEventToRenderCoordinates(app->renderer, event);
@@ -238,7 +243,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         app->mouse_loc = locf;
 
         /* Check for right click in Skew-T area */
-        if(SDL_PointInRect(&loc, &app->skewt.clipping))
+        if(SDL_PointInRect(&loc, &app->skewt.area))
         {
             app->context_menu_location = loc;
             app->show_skew_t_context_menu = true;
@@ -270,7 +275,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         }
     }
 
-    /* Skip event processing of interacting with Nuklear UI elements. */
+    /* Skip event processing if interacting with Nuklear UI elements. */
     if(nk_item_is_any_active(app->ctx)) { return SDL_APP_CONTINUE; }
 
     switch (event->type)
@@ -291,11 +296,9 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 SDL_Point loc = { .x = (i32)event->motion.x, .y = (i32)event->motion.y };
                 SDL_FPoint locf = { .x = event->motion.x, .y = event->motion.y };
 
-                if( event->motion.state == SDL_BUTTON_LEFT && SDL_PointInRect(&loc, &app->skewt.clipping))
+                if( event->motion.state == SDL_BUTTON_LEFT && SDL_PointInRect(&loc, &app->skewt.area))
                 {
                     chart_panel_pan(&app->skewt, app->mouse_loc, locf);
-
-                    app->skewt.needs_background_update = true;
                 }
 
                 app->mouse_loc = locf;
@@ -312,7 +315,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         case SDL_EVENT_MOUSE_WHEEL:
             {
                 SDL_Point loc = { .x = (i32)event->wheel.mouse_x, .y = (i32)event->wheel.mouse_y };
-                if(SDL_PointInRect(&loc, &app->skewt.clipping))
+                if(SDL_PointInRect(&loc, &app->skewt.area))
                 {
                     ChartPanel *cp = &app->skewt;
                     SDL_FPoint locf = { .x = event->wheel.mouse_x, .y = event->wheel.mouse_y };
@@ -321,26 +324,20 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                     f32 zf = event->wheel.y > 0.0f ? factor : event->wheel.y < 0.0f ?  1.0f / factor : 1.0f;
 
                     chart_panel_handle_zoom(cp, locf, zf);
-
-                    app->skewt.needs_background_update = true;
                 }
 
             } break;
 
-        case SDL_EVENT_WINDOW_MAXIMIZED: /* fall through */
-        case SDL_EVENT_WINDOW_RESTORED:  /* fall through */
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: /* fall through */
+        case SDL_EVENT_WINDOW_MAXIMIZED:          /* fall through */
+        case SDL_EVENT_WINDOW_RESTORED:           /* fall through */
         case SDL_EVENT_WINDOW_RESIZED:
             {
-                /* Rebuild the scratch texture. */
-                SDL_DestroyTexture(app->scratch_layer);
-                i32 w, h;
-                SDL_GetCurrentRenderOutputSize(app->renderer, &w, &h);
-                app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
-
-                /* Rescale the sounding area. */
-                chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
-                app->skewt.needs_background_update = true;
-
+                /* This doesn't work like you think it should. Always just check it in the main loop. SDL_AppEvent and
+                 * SDL_AppIterate are out of sync when it comes to window resizes, so you can't query dimensions here and
+                 * have them still be correct when SDL_AppIterate is called. The coordinates and renderer state always 
+                 * represent the state of the renderer on the last frame, not the one you're going into.
+                 */
             } break;
     }
 
@@ -369,6 +366,20 @@ SDL_AppIterate(void *appstate)
     /* Required for Nuklear to handle deltas correctly. */
     nk_input_end(ctx);
 
+    i32 w, h;
+    SDL_GetRenderOutputSize(app->renderer, &w, &h);
+
+    /* Check for resizes. */
+    if(h != app->window_height || w != app->window_width)
+    {
+        /* Rebuild the scratch texture. */
+        SDL_DestroyTexture(app->scratch_layer);
+        app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+
+        /* Rescale the sounding area. */
+        chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
+    }
+
     /* ---- Clear + draw “game” background ---- */
     SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
     SDL_RenderClear(app->renderer);
@@ -384,8 +395,6 @@ SDL_AppIterate(void *appstate)
      * =================================================================================================================== */
     style_hud_panel(ctx);   /* apply transparent style */
 
-    i32 w, h;
-    SDL_GetRenderOutputSize(app->renderer, &w, &h);
     f32 scale_x, scale_y;
     SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
     i32 logical_w = (i32)(w / scale_x);
@@ -431,10 +440,10 @@ SDL_AppIterate(void *appstate)
     /* --- Skew-t area popup menu --- */
     struct nk_rect skewt_context_menu_area =
     {
-        .x = (f32)app->skewt.clipping.x,
-        .y = (f32)app->skewt.clipping.y + bar_h,
-        .w = (f32)app->skewt.clipping.w,
-        .h = (f32)app->skewt.clipping.h - bar_h,
+        .x = (f32)app->skewt.area.x,
+        .y = (f32)app->skewt.area.y + bar_h,
+        .w = (f32)app->skewt.area.w,
+        .h = (f32)app->skewt.area.h - bar_h,
     };
 
     if(app->show_skew_t_context_menu)
@@ -484,21 +493,26 @@ SDL_AppIterate(void *appstate)
         if(nk_begin(ctx, "Debug", nk_rect(150, 150, 320, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
         {
             nk_layout_row_dynamic(ctx, 25, 1);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_loc: (%.1f, %.1f)", app->mouse_loc.x, app->mouse_loc.y);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_loc: (%.2f, %.2f)", app->mouse_loc.x, app->mouse_loc.y);
             nk_labelf(ctx, NK_TEXT_LEFT, " context_loc: (%d, %d)", app->context_menu_location.x, app->context_menu_location.y);
-            nk_labelf(ctx, NK_TEXT_LEFT, "  frame rate: %.1f FPS", frame_rate);
-            nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.1f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
+            nk_labelf(ctx, NK_TEXT_LEFT, "  frame rate: %.2f FPS", frame_rate);
+            nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.2f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
 
-            nk_labelf(ctx, NK_TEXT_LEFT, "cp->y_offset: %.1f", app->skewt.y_offset);
-            nk_labelf(ctx, NK_TEXT_LEFT, "cp->x_offset: %.1f", app->skewt.x_offset);
+            nk_labelf(ctx, NK_TEXT_LEFT, "    cp->area: %4d %4d %4d %4d", app->skewt.area.x, app->skewt.area.y, app->skewt.area.w, app->skewt.area.h);
+            nk_labelf(ctx, NK_TEXT_LEFT, "cp->clipping: %4d %4d %4d %4d", app->skewt.clipping.x, app->skewt.clipping.y, app->skewt.clipping.w, app->skewt.clipping.h);
 
-            nk_labelf(ctx, NK_TEXT_LEFT, "     cp->ard: %.1f", app->skewt.ard);
-            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_w: %.1f", app->skewt.chart_w);
-            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_h: %.1f", app->skewt.chart_h);
+            nk_labelf(ctx, NK_TEXT_LEFT, " scale_x & y: %.2f %.2f", scale_x, scale_y);
 
-            nk_labelf(ctx, NK_TEXT_LEFT, "      cp->zf: %.1f", app->skewt.zf);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.x: %.1f", app->skewt.pan.x);
-            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.y: %.1f", app->skewt.pan.y);
+            nk_labelf(ctx, NK_TEXT_LEFT, "cp->y_offset: %.2f", app->skewt.y_offset);
+            nk_labelf(ctx, NK_TEXT_LEFT, "cp->x_offset: %.2f", app->skewt.x_offset);
+
+            nk_labelf(ctx, NK_TEXT_LEFT, "     cp->ard: %.2f", app->skewt.ard);
+            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_w: %.2f", app->skewt.chart_w);
+            nk_labelf(ctx, NK_TEXT_LEFT, " cp->chart_h: %.2f", app->skewt.chart_h);
+
+            nk_labelf(ctx, NK_TEXT_LEFT, "      cp->zf: %.2f", app->skewt.zf);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.x: %.2f", app->skewt.pan.x);
+            nk_labelf(ctx, NK_TEXT_LEFT, "   cp->pan.y: %.2f", app->skewt.pan.y);
         }
         nk_end(ctx);
     }

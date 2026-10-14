@@ -56,9 +56,6 @@ pressure_hpa_temperature_c_to_chart_coords(SondeHectopascal p, SondeCelsius t, C
     f32 rise = (1.0 - result.y) * cp->ard;
     result.x = (t.val - T_MIN) / (T_MAX - T_MIN) + rise; 
 
-    Assert(result.x <= 1.0f && result.x >= 0.0f);
-    Assert(result.y <= 1.0f && result.y >= 0.0f);
-
     return result;
 }
 
@@ -90,10 +87,23 @@ sounding_update_static_data(AppState *app) /* FIXME: Do I really need the whole 
 
 
     /* Find pressure bounds. */
-    SDL_FPoint lower_right = { .x = 1.0f, .y = 1.0f };
-    SDL_FPoint upper_left = { .x = 0.0f, .y = 0.0f };
+    SDL_FPoint lower_right = { .x = cp->area.x + cp->area.w, .y = cp->area.y + cp->area.h };
+    SDL_FPoint upper_left = { .x = cp->area.x, .y = cp->area.y };
+
+    lower_right = chart_panel_convert_from_screen_coords(lower_right, cp);
+    upper_left = chart_panel_convert_from_screen_coords(upper_left, cp);
+
     lower_right = chart_panel_unapply_pan_and_zoom(lower_right, cp);
     upper_left = chart_panel_unapply_pan_and_zoom(upper_left, cp);
+
+    lower_right.x = lower_right.x < 0.0f ? 0.0f : lower_right.x;
+    lower_right.y = lower_right.y < 0.0f ? 0.0f : lower_right.y;
+    upper_left.x = upper_left.x < 0.0f ? 0.0f : upper_left.x;
+    upper_left.y = upper_left.y < 0.0f ? 0.0f : upper_left.y;
+    lower_right.x = lower_right.x > 1.0f ? 1.0f : lower_right.x;
+    lower_right.y = lower_right.y > 1.0f ? 1.0f : lower_right.y;
+    upper_left.x = upper_left.x > 1.0f ? 1.0f : upper_left.x;
+    upper_left.y = upper_left.y > 1.0f ? 1.0f : upper_left.y;
 
     SondeHectopascal p_max = {0};
     SondeHectopascal p_min = {0};
@@ -146,7 +156,7 @@ sounding_initialize_static_data(AppState *app)
         TTF_SetTextColorFloat(isotherm_labels[i], isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
     }
 
-    success &= sounding_update_static_data(app);
+    app->skewt.needs_background_update = true;
 
     return success;
 }
