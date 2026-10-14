@@ -70,10 +70,8 @@ chart_coords_to_pressure_hpa_temperature_c(SDL_FPoint pnt, ChartPanel *cp, Sonde
 }
 
 static inline b32
-sounding_update_static_data(AppState *app) /* FIXME: Do I really need the whole app state? Could just use panel. */
+sounding_update_static_data(ChartPanel *cp)
 {
-    ChartPanel *cp = &app->skewt;
-
     /* Calculate the screen coordinates of the isobars. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
@@ -171,7 +169,7 @@ sounding_draw(AppState *app)
     if(cp->needs_background_update)
     {
         cp->needs_background_update = false;
-        sounding_update_static_data(app);
+        sounding_update_static_data(cp);
     }
 
     f32 w = (f32)cp->chart_w;
