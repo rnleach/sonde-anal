@@ -11,7 +11,7 @@
 
 #define TARGET_FRAME_RATE_FPS 60
 #define FRAME_TARGET_TIME (1000000000 / TARGET_FRAME_RATE_FPS) /* in nanoseconds for SDL3 */
-#define FONT_SIZE (10.0f)
+#define FONT_SIZE (10.5f)
 
 /* ------------------------------------------------ Nuklear configuration ------------------------------------------------ */
 #define NK_INCLUDE_FIXED_TYPES
@@ -95,19 +95,23 @@ style_debug_panel(struct nk_context *ctx)
 
     /* Labels */
     ctx->style.text.color              = nk_rgba(245, 245, 245, 255);
+}
 
-#if 0
-    /* Soft buttons */
-    ctx->style.button.rounding         = 6.0f;
-    ctx->style.button.padding          = nk_vec2(12, 6);
-    ctx->style.button.border           = 1.0f;
-    ctx->style.button.normal           = nk_style_item_color(nk_rgba(40, 40, 50, 180));
-    ctx->style.button.hover            = nk_style_item_color(nk_rgba(70, 70, 90, 220));
-    ctx->style.button.active           = nk_style_item_color(nk_rgba(100, 100, 140, 255));
-    ctx->style.button.text_normal      = nk_rgb(230, 230, 240);
-    ctx->style.button.text_hover       = nk_rgb(255, 255, 255);
-    ctx->style.button.text_active      = nk_rgb(255, 255, 255);
-#endif
+static inline void 
+nk_menu_separator(struct nk_context *ctx)
+{
+    /* Allocate a thin row (e.g., 6 pixels high) for the separator */
+    nk_layout_row_dynamic(ctx, 6, 1);
+    
+    /* Get the screen space bounds of this row allocation */
+    struct nk_rect bounds = nk_widget_bounds(ctx);
+    
+    /* Draw a horizontal line through the middle of the allocated slot */
+    struct nk_command_buffer *canvas = nk_window_get_canvas(ctx);
+    float mid_y = bounds.y + (bounds.h / 2.0f);
+    
+    /* Adjust the color (nk_rgb) to match your menu theme's border color */
+    nk_stroke_line(canvas, bounds.x, mid_y, bounds.x + bounds.w, mid_y, 1.0f, nk_rgb(65, 65, 65));
 }
 
 /* --------------------------------------- Helper: load a font from static memory ---------------------------------------- */
@@ -202,7 +206,7 @@ GetCurrentWindowRefreshRate(SDL_Window *window)
 {
     SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
     
-    if (display_id == 0)
+    if(display_id == 0)
     {
         SDL_Log("Failed to get Display for Window: %s", SDL_GetError());
         return 0.0f; /* Default fallback */
@@ -211,7 +215,7 @@ GetCurrentWindowRefreshRate(SDL_Window *window)
     /* Fetch the active desktop configuration mode for that display */
     SDL_DisplayMode const *mode = SDL_GetDesktopDisplayMode(display_id);
     
-    if (!mode)
+    if(!mode)
     {
         SDL_Log("Failed to get Desktop Display Mode: %s", SDL_GetError());
         return 60.0f; /* Default fallback */
@@ -281,7 +285,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     app_state_initialize(app, window, renderer, scratch_layer, text_engine, font, ctx, w, h);
 
     /* Initialize the drawing areas. */
-    sounding_initialize_static_data(app); /* FIXME: Does this need the whole 'app' object, or just the panel? */
+    sounding_initialize_static_data(app);
 
     /* Start receiving events - required by the SDL3 backend. */
     nk_input_begin(app->ctx);
@@ -290,7 +294,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 }
 
 i32 const skew_t_context_menu_width = 150;
-i32 const skew_t_context_menu_height = 100;
+i32 const skew_t_context_menu_height = 400;
 
 SDL_AppResult 
 SDL_AppEvent(void *appstate, SDL_Event *event)
@@ -309,7 +313,6 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
     /* Watch specifically for Right Mouse Clicks to handle context menus */
     if(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_RIGHT) 
     {
-
         SDL_Point loc = { .x = (i32)event->button.x, .y = (i32)event->button.y };
         SDL_FPoint locf = { .x = event->button.x, .y = event->button.y };
         app->mouse_loc = locf;
@@ -326,7 +329,6 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
     /* Watch specifically for Left Mouse Clicks to handle closing context menus */
     if(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT) 
     {
-
         SDL_Point loc = { .x = (i32)event->button.x, .y = (i32)event->button.y };
         SDL_FPoint locf = { .x = event->button.x, .y = event->button.y };
         app->mouse_loc = locf;
@@ -343,11 +345,36 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         if(!SDL_PointInRect(&loc, &skew_t_context_menu_rect))
         {
             app->show_skew_t_context_menu = false;
-            return SDL_APP_CONTINUE;  /* Consume this event so nothing else handles it! */
         }
     }
 
-    /* Skip event processing if interacting with Nuklear UI elements. */
+    /* Guard: Bypass background chart logic ONLY when interacting within context menu rect */
+    if(app->show_skew_t_context_menu)
+    {
+        SDL_Rect skew_t_context_menu_rect = 
+        {
+            .x = app->context_menu_location.x,
+            .y = app->context_menu_location.y,
+            .w = skew_t_context_menu_width,
+            .h = skew_t_context_menu_height
+        };
+        
+        SDL_Point loc = { .x = (i32)event->button.x, .y = (i32)event->button.y };
+        if(event->type == SDL_EVENT_MOUSE_MOTION) 
+        {
+            loc.x = (i32)event->motion.x;
+            loc.y = (i32)event->motion.y;
+        }
+        else if(event->type == SDL_EVENT_MOUSE_WHEEL) 
+        {
+            loc.x = (i32)event->wheel.mouse_x;
+            loc.y = (i32)event->wheel.mouse_y;
+        }
+
+        if(SDL_PointInRect(&loc, &skew_t_context_menu_rect)) { return SDL_APP_CONTINUE; }
+    }
+    
+    /* Skip event processing if interacting with standard active Nuklear UI elements (like the layout bar). */
     if(nk_item_is_any_active(app->ctx)) { return SDL_APP_CONTINUE; }
 
     switch (event->type)
@@ -359,13 +386,10 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
         case SDL_EVENT_KEY_DOWN:
             {
-                if (event->key.key == SDLK_ESCAPE) { return SDL_APP_SUCCESS; }
-                if (event->key.key == SDLK_F1) { app->show_debug = !app->show_debug; }
-                if (event->key.key == SDLK_RIGHT)
-                {
-                    app->current_sndg = (app->current_sndg + 1) % app->n_soundings;
-                }
-                if (event->key.key == SDLK_LEFT)
+                if(event->key.key == SDLK_ESCAPE) { return SDL_APP_SUCCESS; }
+                if(event->key.key == SDLK_F1) { app->show_debug = !app->show_debug; }
+                if(event->key.key == SDLK_RIGHT) { app->current_sndg = (app->current_sndg + 1) % app->n_soundings; }
+                if(event->key.key == SDLK_LEFT)
                 {
                     app->current_sndg -= 1;
                     app->current_sndg = app->current_sndg < 0 ? app->n_soundings - 1 : app->current_sndg;
@@ -383,14 +407,6 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 }
 
                 app->mouse_loc = locf;
-            } break;
-
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            {
-            } break;
-
-        case SDL_EVENT_MOUSE_BUTTON_UP:
-            {
             } break;
 
         case SDL_EVENT_MOUSE_WHEEL:
@@ -463,20 +479,17 @@ SDL_AppIterate(void *appstate)
         app->window_height = h;
     }
 
-    /* ---- Clear + draw “game” background ---- */
+    /* ---- Clear + draw background ---- */
     SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
     SDL_RenderClear(app->renderer);
 
-    /* Draw stuff */
-    b32 success = true;
-
     /* Draw the sounding area. */
-    success &= sounding_draw(app); Assert(success);
+    b32 success = sounding_draw(app); Assert(success);
 
     /* ======================================================================================================================
      *                                                     Interactive UI
      * =================================================================================================================== */
-    style_hud_panel(ctx);   /* apply transparent style */
+    style_hud_panel(ctx);
 
     f32 scale_x, scale_y;
     SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
@@ -490,9 +503,8 @@ SDL_AppIterate(void *appstate)
         {
             nk_layout_row_dynamic(ctx, 40, 5);
 
-            if (nk_button_label(ctx, "Load"))
+            if(nk_button_label(ctx, "Load"))
             {
-                /* Define an optional file filter */
                 SDL_DialogFileFilter const filters[] =
                     {
                         { "Bufkit Files (*.buf)", "buf" },
@@ -510,115 +522,93 @@ SDL_AppIterate(void *appstate)
                 );
             }
 
-            if (nk_button_label(ctx, "|<"))
-            {
-                app->current_sndg = 0;
-            }
+            if(nk_button_label(ctx, "|<")) { app->current_sndg = 0; }
+            if(nk_button_label(ctx, "<"))  { app->current_sndg = app->current_sndg - 1 < 0 ? app->n_soundings - 1 : app->current_sndg - 1; }
+            if(nk_button_label(ctx, ">"))  { app->current_sndg = (app->current_sndg + 1) % app->n_soundings; }
+            if(nk_button_label(ctx, ">|")) { app->current_sndg = app->n_soundings - 1; }
 
-            if (nk_button_label(ctx, "<"))
-            {
-                app->current_sndg -= 1;
-                app->current_sndg = app->current_sndg < 0 ? app->n_soundings - 1 : app->current_sndg;
-            }
-
-            if (nk_button_label(ctx, ">"))
-            {
-                app->current_sndg = (app->current_sndg + 1) % app->n_soundings;
-            }
-
-            if (nk_button_label(ctx, ">|"))
-            {
-                app->current_sndg = app->n_soundings - 1;
-            }
-
+            /* --- Attached Popup Layout (Eliminates separate blocking window frame) --- */
         }
-        
         nk_end(ctx);
     }
 
-    /* --- Skew-t area popup menu --- */
-    struct nk_rect skewt_context_menu_area =
-    {
-        .x = (f32)app->skewt.area.x,
-        .y = (f32)app->skewt.area.y + bar_h,
-        .w = (f32)app->skewt.area.w,
-        .h = (f32)app->skewt.area.h - bar_h,
-    };
-
     if(app->show_skew_t_context_menu)
     {
-        if(nk_begin(ctx, "Skewt-Context-Area", skewt_context_menu_area, NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | NK_WINDOW_NO_INPUT | NK_WINDOW_NOT_INTERACTIVE))
-        {
-            /* Make sure we can see the popup menu. */
-            nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
-            nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
+        nk_style_push_color(ctx, &ctx->style.window.background, nk_rgba(40, 40, 40, 255));
+        nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(nk_rgba(40, 40, 40, 255)));
 
-            struct nk_rect popup_bounds = nk_rect(
-                    app->context_menu_location.x,
-                    app->context_menu_location.y - bar_h,
-                    skew_t_context_menu_width,
-                    skew_t_context_menu_height
-                );
+        struct nk_rect popup_bounds = nk_rect(
+            app->context_menu_location.x,
+            app->context_menu_location.y,
+            skew_t_context_menu_width,
+            skew_t_context_menu_height
+        );
+
+        if(nk_begin(ctx, "SkewTContextMenuWindow", popup_bounds, NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR))
+        {
+            nk_layout_row_dynamic(ctx, skew_t_context_menu_height - 10, 1);
             
-            if(nk_popup_begin(ctx, NK_POPUP_STATIC, "SkewTContextMenu", NK_WINDOW_BORDER, popup_bounds))
+            if (nk_group_begin(ctx, "MenuScrollGroup", 0)) 
             {
                 nk_layout_row_dynamic(app->ctx, 25, 1);
                 
+                if(nk_checkbox_label(ctx, "Show Wet Bulb", &app->show_wet_bulb)) 
+                { 
+                    app->show_skew_t_context_menu = false; 
+                    nk_popup_close(ctx);
+                }
+
+                nk_menu_separator(app->ctx);
+                nk_layout_row_dynamic(app->ctx, 25, 1);
+
                 if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) 
                 { 
-                    app->show_skew_t_context_menu = false; /* close menu */
+                    app->show_skew_t_context_menu = false; 
                     nk_popup_close(ctx);
                 }
 
                 if(nk_checkbox_label(ctx, "Show Hail Growth", &app->show_hail_growth_zone)) 
                 { 
-                    app->show_skew_t_context_menu = false; /* close menu */
+                    app->show_skew_t_context_menu = false; 
                     nk_popup_close(ctx);
                 }
 
                 if(nk_checkbox_label(ctx, "Show Dendritic Growth", &app->show_dendritic_growth_zone)) 
                 { 
-                    app->show_skew_t_context_menu = false; /* close menu */
+                    app->show_skew_t_context_menu = false; 
                     nk_popup_close(ctx);
                 }
-
-                nk_popup_end(ctx);
+                
+                nk_group_end(ctx);
             }
-            else
-            {
-                /* If nk_popup_begin returns false, user clicked outside of the menu to close it */
-                app->show_skew_t_context_menu = false;
-            }
-
-            nk_style_pop_color(ctx);
-            nk_style_pop_style_item(ctx);
+            nk_end(ctx);
         }
-        nk_end(ctx);
+        else
+        {
+            app->show_skew_t_context_menu = false;
+        }
+
+        nk_style_pop_color(ctx);
+        nk_style_pop_style_item(ctx);
     }
 
-    /* --- Optional debug panel (toggle with F1) --- */
+    /* --- Debug panel --- */
     if(app->show_debug)
     {
-        style_debug_panel(ctx);   /* apply debug style */
-
+        style_debug_panel(ctx);
         if(nk_begin(ctx, "Debug", nk_rect(150, 150, 320, 400), NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_TITLE))
         {
             nk_layout_row_dynamic(ctx, 25, 1);
             nk_labelf(ctx, NK_TEXT_LEFT, "   mouse_loc: (%.2f, %.2f)", app->mouse_loc.x, app->mouse_loc.y);
             nk_labelf(ctx, NK_TEXT_LEFT, "  frame rate: %.2f FPS", frame_rate);
             nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.2f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
-
             nk_labelf(ctx, NK_TEXT_LEFT, " n_soundings: %d", app->n_soundings);
             nk_labelf(ctx, NK_TEXT_LEFT, "current_sndg: %d", app->current_sndg);
-
         }
         nk_end(ctx);
     }
 
-    /* ---- Draw the UI on top of everything ---- */
     nk_sdl_render(ctx, NK_ANTI_ALIASING_ON);
-
-    /* Required for Nuklear to handle deltas correctly. */
     nk_input_begin(ctx);
 
     u64 elapsed_this_frame = SDL_GetTicksNS() - start_time;
@@ -634,7 +624,7 @@ SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
     (void)result;
     AppState *app = appstate;
-    if (!app) return;
+    if(!app) return;
 
     nk_sdl_shutdown(app->ctx);
     TTF_CloseFont(app->font);
@@ -644,4 +634,3 @@ SDL_AppQuit(void *appstate, SDL_AppResult result)
     SDL_DestroyWindow(app->window);
     SDL_Quit();
 }
-

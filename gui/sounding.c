@@ -12,11 +12,11 @@ static inline b32 sounding_draw(AppState *app);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 
-static f32 const isobar_width         = 1.0f;
-static f32 const isotherm_width       = 1.0f;
-static f32 const freezing_level_width = 3.0f;
+static f32 const isobar_width         = 0.5f;
+static f32 const isotherm_width       = 0.5f;
+static f32 const freezing_level_width = 2.5f;
 static f32 const temperature_width    = 2.0f;
-static f32 const wet_bulb_width         = 1.0f;
+static f32 const wet_bulb_width       = 1.0f;
 static f32 const dew_point_width      = 2.0f;
 
 static SDL_FColor const isobar_color                = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
@@ -239,7 +239,7 @@ sounding_draw_background(AppState *app)
             i32 j;
             for(j = i + 1; j < ECO_ARRAY_SIZE(isotherms); ++j)
             {
-                if((isotherms[j] - isotherms[i] - 10.0f) < 0.01) { pair2 = isotherms_sdl[j]; }
+                if(fabsf(isotherms[j] - isotherms[i] - 10.0f) < 0.01f) { pair2 = isotherms_sdl[j]; }
             }
             if(j > ECO_ARRAY_SIZE(isotherms)) { break; }
 
@@ -382,7 +382,7 @@ sounding_draw(AppState *app)
                 }
 
                 SondeCelsius wb = snd->wb[l];
-                if(!isnan(wb.val))
+                if(app->show_wet_bulb && !isnan(wb.val))
                 {
                     SDL_FPoint pnt = pressure_hpa_temperature_c_to_chart_coords(p, wb, cp);
                     pnt = chart_panel_apply_pan_and_zoom(pnt, cp);

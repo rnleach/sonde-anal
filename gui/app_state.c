@@ -33,6 +33,7 @@ typedef struct
     b32 show_freezing_level;
     b32 show_hail_growth_zone;
     b32 show_dendritic_growth_zone;
+    b32 show_wet_bulb;
 
     /* Debug Window Information. */
     bool show_debug;
@@ -71,10 +72,12 @@ app_state_initialize(
     app->current_sndg = -1;
 
     /* Skew-t panel state */
-    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.2);
+    app->skewt = chart_panel_create(0, 0, w / 2, h, 1.0);
     app->show_freezing_level = true;
     app->show_hail_growth_zone = true;
     app->show_dendritic_growth_zone = true;
+    app->show_wet_bulb = false;
+
     app->show_skew_t_context_menu = false;
 }
 
