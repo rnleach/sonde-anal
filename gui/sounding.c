@@ -11,6 +11,24 @@ static inline b32 sounding_initialize_static_data(AppState *app);
 static inline b32 sounding_draw(AppState *app);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
+
+static f32 const isobar_width         = 1.0f;
+static f32 const isotherm_width       = 1.0f;
+static f32 const freezing_level_width = 3.0f;
+static f32 const temperature_width    = 2.0f;
+static f32 const wet_bulb_width         = 1.0f;
+static f32 const dew_point_width      = 2.0f;
+
+static SDL_FColor const isobar_color                = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
+static SDL_FColor const isotherm_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
+static SDL_FColor const isotherm_band_color         = { .r = 0.933333f, .g = 0.964705f, .b = 0.917647f, .a = 1.00f };
+static SDL_FColor const freezing_level_color        = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.00f };
+static SDL_FColor const hail_growth_zone_color      = { .r = 0.0f,      .g = 0.803921f, .b = 0.803922f, .a = 0.55f };
+static SDL_FColor const dendritic_growth_zone_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780393f, .a = 0.55f };
+static SDL_FColor const temperature_color           = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const wet_bulb_color              = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const dew_point_color             = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+
 typedef struct
 {
     SDL_FPoint p1;
@@ -19,8 +37,6 @@ typedef struct
 
 /* Skew-T area configuration - Isobars */
 static f32 const isobars[] = {1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f }; /* hPa */
-static f32 const isobar_width = 1.0f;
-static SDL_FColor const isobar_color = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.0f };
 static SDL_FPoint isobars_sdl[ECO_ARRAY_SIZE(isobars)] = {0};
 static TTF_Text *isobar_labels[ECO_ARRAY_SIZE(isobars)] = {0};
 
@@ -28,22 +44,14 @@ static TTF_Text *isobar_labels[ECO_ARRAY_SIZE(isobars)] = {0};
 static f32 const isotherms[] = /* C */
     {
           -150.0f, -140.0f, -130.0f, -120.0f, -110.0f, -100.0f, -90.0f, -80.0f, -70.0f, -60.0f, -50.0f,
-           -40.0f,  -30.0f,  -20.0f,  -10.0f,    0.0f,   10.0f,  20.0f,  30.0f,  40.0f,  50.0f
+           -40.0f,  -30.0f,  -20.0f,  -10.0f,    0.0f,    5.0f,  10.0f,  15.0f,  20.0f,  25.0f,  30.0f,
+            35.0f,   40.0f,   45.0f,   50.0f
     };
-
-static f32 const isotherm_width = 1.0f;
-
-static SDL_FColor const isotherm_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
-static SDL_FColor const isotherm_band_color         = { .r = 0.933333f, .g = 0.964705f, .b = 0.917647f, .a = 1.00f };
-static SDL_FColor const freezing_level_color        = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.00f };
-static SDL_FColor const hail_growth_zone_color      = { .r = 0.0f,      .g = 0.803921f, .b = 0.803922f, .a = 0.55f };
-static SDL_FColor const dendritic_growth_zone_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780393f, .a = 0.55f };
 
 static SDL_FPoint_Pair isotherms_sdl[ECO_ARRAY_SIZE(isotherms)] = {0};
 static SDL_FPoint hail_growth_zone_points_sdl[4] = {0};
 static SDL_FPoint dendritic_growth_zone_points_sdl[4] = {0};
 static TTF_Text *isotherm_labels[ECO_ARRAY_SIZE(isotherms)] = {0};
-static f32 const freezing_level_width = 3.0f;
 
 /* Utility functions for coordinate transforms. */
 static inline f32
@@ -212,22 +220,13 @@ sounding_initialize_static_data(AppState *app)
 }
 
 static inline b32
-sounding_draw(AppState *app)
+sounding_draw_background(AppState *app)
 {
     ChartPanel *cp = &app->skewt;
     MagAllocator alloc_ = app->scratch_alloc;
     b32 success = true;
 
-    if(cp->needs_background_update)
-    {
-        cp->needs_background_update = false;
-        sounding_update_static_data(cp);
-    }
-
     f32 w = (f32)cp->chart_w;
-
-    /* Set up clipping area. */
-    SDL_SetRenderClipRect(app->renderer, &cp->clipping);
 
     /* Draw the filled bands in the background. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms) - 1; ++i)
@@ -235,7 +234,14 @@ sounding_draw(AppState *app)
         if(fmodf(isotherms[i], 20.0f) == 0.0f)
         {
             SDL_FPoint_Pair pair1 = isotherms_sdl[i + 0];
-            SDL_FPoint_Pair pair2 = isotherms_sdl[i + 1];
+            SDL_FPoint_Pair pair2;
+
+            i32 j;
+            for(j = i + 1; j < ECO_ARRAY_SIZE(isotherms); ++j)
+            {
+                if((isotherms[j] - isotherms[i] - 10.0f) < 0.01) { pair2 = isotherms_sdl[j]; }
+            }
+            if(j > ECO_ARRAY_SIZE(isotherms)) { break; }
 
             SDL_FPoint vs[4] = { pair1.p1, pair1.p2, pair2.p2, pair2.p1 };
 
@@ -308,6 +314,89 @@ sounding_draw(AppState *app)
         SDL_SetRenderDrawColorFloat(app->renderer, isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
         TTF_DrawRendererText(isotherm_labels[i], trect1.x, trect1.y);
         TTF_DrawRendererText(isotherm_labels[i], trect2.x, trect2.y);
+    }
+
+    return success;
+}
+
+static inline b32
+sounding_draw(AppState *app)
+{
+    ChartPanel *cp = &app->skewt;
+    MagAllocator alloc_ = app->scratch_alloc;
+    MagAllocator *alloc = &alloc_;
+
+    b32 success = true;
+
+    if(cp->needs_background_update)
+    {
+        cp->needs_background_update = false;
+        success &= sounding_update_static_data(cp);
+    }
+
+    /* Set up clipping area. */
+    SDL_SetRenderClipRect(app->renderer, &cp->clipping);
+
+    success &= sounding_draw_background(app);
+
+    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    {
+        SondeSounding *snd = app->sndgs[app->current_sndg];
+
+        /* Draw all at once! */
+        PakArrayLedger t_ledger = pak_array_ledger_create(pak_len(&snd->levels));
+        SDL_FPoint *t_pnts = eco_arena_nmalloc(alloc, pak_len(&snd->levels), SDL_FPoint); Assert(t_pnts);
+
+        PakArrayLedger dp_ledger = pak_array_ledger_create(pak_len(&snd->levels));
+        SDL_FPoint *dp_pnts = eco_arena_nmalloc(alloc, pak_len(&snd->levels), SDL_FPoint); Assert(dp_pnts);
+
+        PakArrayLedger wb_ledger = pak_array_ledger_create(pak_len(&snd->levels));
+        SDL_FPoint *wb_pnts = eco_arena_nmalloc(alloc, pak_len(&snd->levels), SDL_FPoint); Assert(wb_pnts);
+
+        for(size l = 0; l < pak_len(&snd->levels); ++l)
+        {
+            SondeHectopascal p = snd->p[l];
+
+            if(!isnan(p.val))
+            {
+                SondeCelsius t = snd->t[l];
+                if(!isnan(t.val))
+                {
+                    SDL_FPoint pnt = pressure_hpa_temperature_c_to_chart_coords(p, t, cp);
+                    pnt = chart_panel_apply_pan_and_zoom(pnt, cp);
+                    pnt = chart_panel_convert_to_screen_coords(pnt, cp);
+
+                    size idx = pak_array_ledger_push_back_index(&t_ledger); 
+                    t_pnts[idx] = pnt;
+                }
+
+                SondeCelsius dp = snd->dp[l];
+                if(!isnan(dp.val))
+                {
+                    SDL_FPoint pnt = pressure_hpa_temperature_c_to_chart_coords(p, dp, cp);
+                    pnt = chart_panel_apply_pan_and_zoom(pnt, cp);
+                    pnt = chart_panel_convert_to_screen_coords(pnt, cp);
+
+                    size idx = pak_array_ledger_push_back_index(&dp_ledger); 
+                    dp_pnts[idx] = pnt;
+                }
+
+                SondeCelsius wb = snd->wb[l];
+                if(!isnan(wb.val))
+                {
+                    SDL_FPoint pnt = pressure_hpa_temperature_c_to_chart_coords(p, wb, cp);
+                    pnt = chart_panel_apply_pan_and_zoom(pnt, cp);
+                    pnt = chart_panel_convert_to_screen_coords(pnt, cp);
+
+                    size idx = pak_array_ledger_push_back_index(&wb_ledger); 
+                    wb_pnts[idx] = pnt;
+                }
+            }
+        }
+
+        success &= DrawPolylineThickAA(app->renderer, t_pnts, pak_len(&t_ledger), temperature_width, temperature_color, alloc_);
+        success &= DrawPolylineThickAA(app->renderer, dp_pnts, pak_len(&dp_ledger), dew_point_width, dew_point_color, alloc_);
+        success &= DrawPolylineThickAA(app->renderer, wb_pnts, pak_len(&wb_ledger), wet_bulb_width, wet_bulb_color, alloc_);
     }
 
     /* Reset the clipping rect and return. */
