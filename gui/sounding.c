@@ -220,10 +220,9 @@ sounding_initialize_static_data(AppState *app)
 }
 
 static inline b32
-sounding_draw_background(AppState *app)
+sounding_draw_background(AppState *app, MagAllocator alloc_)
 {
     ChartPanel *cp = &app->skewt;
-    MagAllocator alloc_ = app->scratch_alloc;
     b32 success = true;
 
     f32 w = (f32)cp->chart_w;
@@ -320,24 +319,12 @@ sounding_draw_background(AppState *app)
 }
 
 static inline b32
-sounding_draw(AppState *app)
+sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
 {
     ChartPanel *cp = &app->skewt;
-    MagAllocator alloc_ = app->scratch_alloc;
     MagAllocator *alloc = &alloc_;
 
     b32 success = true;
-
-    if(cp->needs_background_update)
-    {
-        cp->needs_background_update = false;
-        success &= sounding_update_static_data(cp);
-    }
-
-    /* Set up clipping area. */
-    SDL_SetRenderClipRect(app->renderer, &cp->clipping);
-
-    success &= sounding_draw_background(app);
 
     if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
     {
@@ -398,6 +385,103 @@ sounding_draw(AppState *app)
         success &= DrawPolylineThickAA(app->renderer, dp_pnts, pak_len(&dp_ledger), dew_point_width, dew_point_color, alloc_);
         success &= DrawPolylineThickAA(app->renderer, wb_pnts, pak_len(&wb_ledger), wet_bulb_width, wet_bulb_color, alloc_);
     }
+
+    return success;
+}
+
+static inline b32
+sounding_draw_legend(AppState *app, MagAllocator alloc_)
+{
+    b32 success = true;
+
+    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    {
+        f32 const padding = 6.0f;
+        f32 const border_width = 3.0f;
+
+        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeStationInfo *stn = &snd->stn_info;
+
+        SDL_FPoint legend_ul = { .x = 10.0f, .y = 70.0f };
+        SDL_FPoint legend_lr = { .x = legend_ul.x + padding, .y = legend_ul.y + padding };
+        i32 tw, th;
+
+        ElkStr source = snd->source;
+        ElkStr source_truncated = { .start = source.start + source.len - 1, .len = 1 };
+        char *c = source_truncated.start;
+        while(*c != '/' && *c != '\\' && c >= source.start) { c--; source_truncated.len++; }
+        source_truncated.len--;
+        source_truncated.start = c + 1;
+        TTF_Text *source_txt = TTF_CreateText(app->text_engine, app->font, source_truncated.start, source_truncated.len);
+        TTF_SetTextColorFloat(source_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
+        TTF_GetTextSize(source_txt, &tw, &th);
+        SDL_FPoint source_txt_start = legend_lr;
+        legend_lr.y += (f32)th;
+        legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
+
+        char loc_str[64] = {0};
+        snprintf(loc_str, sizeof(loc_str), "%.*s (%.2lf, %.2lf)", (int)stn->id.len, stn->id.start, stn->latitude, stn->longitude);
+        TTF_Text *loc_txt = TTF_CreateText(app->text_engine, app->font, loc_str, 0);
+        TTF_SetTextColorFloat(loc_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
+        TTF_GetTextSize(loc_txt, &tw, &th);
+        SDL_FPoint loc_txt_start = { .x = legend_ul.x + padding, .y = legend_lr.y};
+        legend_lr.y += (f32)th;
+        legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
+
+        char date_str[34] = {0};
+        ElkStructTime vt = elk_make_struct_time(snd->valid_time);
+        snprintf(date_str, sizeof(date_str), "%02d/%02d/%4d %02dZ F%03d", vt.month, vt.day, vt.year, vt.hour, snd->lead_time);
+        TTF_Text *date_txt = TTF_CreateText(app->text_engine, app->font, date_str, 0);
+        TTF_SetTextColorFloat(date_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
+        TTF_GetTextSize(loc_txt, &tw, &th);
+        SDL_FPoint date_txt_start = { .x = legend_ul.x + padding, .y = legend_lr.y};
+        legend_lr.y += (f32)th;
+        legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
+
+        legend_lr.y += padding;
+        legend_lr.x += padding;
+
+        SDL_FPoint border[4] = {0};
+        border[0] = legend_ul;
+        border[1] = (SDL_FPoint){ .x = legend_ul.x, .y = legend_lr.y };
+        border[2] = legend_lr;
+        border[3] = (SDL_FPoint){ .x = legend_lr.x, .y = legend_ul.y };
+
+        success &= DrawPolygonThick(app->renderer, border, ECO_ARRAY_SIZE(border), border_width, isobar_color, app->background, alloc_);
+
+        TTF_DrawRendererText(source_txt, source_txt_start.x, source_txt_start.y);
+        TTF_DrawRendererText(loc_txt, loc_txt_start.x, loc_txt_start.y);
+        TTF_DrawRendererText(date_txt, date_txt_start.x, date_txt_start.y);
+
+        TTF_DestroyText(source_txt);
+        TTF_DestroyText(loc_txt);
+        TTF_DestroyText(date_txt);
+    }
+
+    return success;
+}
+
+static inline b32
+sounding_draw(AppState *app)
+{
+    ChartPanel *cp = &app->skewt;
+    MagAllocator alloc_ = app->scratch_alloc;
+    //MagAllocator *alloc = &alloc_;
+
+    b32 success = true;
+
+    if(cp->needs_background_update)
+    {
+        cp->needs_background_update = false;
+        success &= sounding_update_static_data(cp);
+    }
+
+    /* Set up clipping area. */
+    SDL_SetRenderClipRect(app->renderer, &cp->clipping);
+
+    success &= sounding_draw_background(app, alloc_);
+    success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_);
+    success &= sounding_draw_legend(app, alloc_);
 
     /* Reset the clipping rect and return. */
     SDL_SetRenderClipRect(app->renderer, NULL);
