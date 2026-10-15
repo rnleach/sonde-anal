@@ -8,7 +8,8 @@ typedef struct
     SDL_Renderer *renderer;
     SDL_Texture *scratch_layer;
     TTF_TextEngine *text_engine;
-    TTF_Font *font;
+    TTF_Font *small_font;
+    TTF_Font *large_font;
     struct nk_context *ctx;
     u64 last_frame;                  /* For measuring and controlling actual FPS.                                         */
     i32 window_width, window_height; /* Fore detecting resizes. SDL_AppEvent and SDL_AppIterate are out of sync on sizes. */
@@ -48,7 +49,8 @@ app_state_initialize(
         SDL_Renderer *renderer,
         SDL_Texture *scratch_layer,
         TTF_TextEngine *text_engine,
-        TTF_Font *font,
+        TTF_Font *small_font,
+        TTF_Font *large_font,
         struct nk_context *ctx,
         i32 w,                            /* Window Width  */
         i32 h                             /* Window height */
@@ -59,7 +61,8 @@ app_state_initialize(
     app->renderer = renderer;
     app->scratch_layer = scratch_layer;
     app->text_engine = text_engine;
-    app->font = font;
+    app->small_font = small_font;
+    app->large_font = large_font;
     app->ctx = ctx;
     app->scratch_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
     app->data_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));

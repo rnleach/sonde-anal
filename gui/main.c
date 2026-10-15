@@ -11,7 +11,8 @@
 
 #define TARGET_FRAME_RATE_FPS 60
 #define FRAME_TARGET_TIME (1000000000 / TARGET_FRAME_RATE_FPS) /* in nanoseconds for SDL3 */
-#define FONT_SIZE (10.5f)
+#define SMALL_FONT_SIZE (10.5f)
+#define LARGE_FONT_SIZE (14.0f)
 
 /* ------------------------------------------------ Nuklear configuration ------------------------------------------------ */
 #define NK_INCLUDE_FIXED_TYPES
@@ -256,11 +257,13 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_SetRenderScale(renderer, scale, scale);
     SDL_SetRenderVSync(renderer, 1);
 
-    /* Set up the font. */
+    /* Set up the fonts. */
     TTF_TextEngine *text_engine = TTF_CreateRendererTextEngine(renderer);
     StopIf(!text_engine, SDL_Log("Failure TTF_CreateRendererTextEngine."); return SDL_APP_FAILURE);
-    TTF_Font *font = load_embedded_ttf_font(FONT_SIZE * scale);
-    StopIf(!font, SDL_Log("Failure to load font."); return SDL_APP_FAILURE);
+    TTF_Font *small_font = load_embedded_ttf_font(SMALL_FONT_SIZE * scale);
+    StopIf(!small_font, SDL_Log("Failure to load small font."); return SDL_APP_FAILURE);
+    TTF_Font *large_font = load_embedded_ttf_font(LARGE_FONT_SIZE * scale);
+    StopIf(!large_font, SDL_Log("Failure to load large font."); return SDL_APP_FAILURE);
 
     /* Set up the scratch texture. */
     i32 w, h;
@@ -273,7 +276,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     /* Fonts for Nuklear */
     {
         struct nk_font_atlas *atlas = nk_sdl_font_stash_begin(ctx);
-        struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, FONT_SIZE * 96.0 / 72.0 * scale, NULL);
+        struct nk_font *font = nk_font_atlas_add_from_memory(atlas, Roboto_Bold_ttf, Roboto_Bold_ttf_len, SMALL_FONT_SIZE * 96.0 / 72.0 * scale, NULL);
         nk_sdl_font_stash_end(ctx);
 
         /* Compensate for the scale so text stays the right visual size */
@@ -282,7 +285,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
     /* Initialize the main application state. */
-    app_state_initialize(app, window, renderer, scratch_layer, text_engine, font, ctx, w, h);
+    app_state_initialize(app, window, renderer, scratch_layer, text_engine, small_font, large_font, ctx, w, h);
 
     /* Initialize the drawing areas. */
     sounding_initialize_static_data(app);
@@ -627,7 +630,8 @@ SDL_AppQuit(void *appstate, SDL_AppResult result)
     if(!app) return;
 
     nk_sdl_shutdown(app->ctx);
-    TTF_CloseFont(app->font);
+    TTF_CloseFont(app->small_font);
+    TTF_CloseFont(app->large_font);
     TTF_DestroyRendererTextEngine(app->text_engine);
     SDL_DestroyTexture(app->scratch_layer);
     SDL_DestroyRenderer(app->renderer);

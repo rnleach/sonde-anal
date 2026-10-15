@@ -201,7 +201,7 @@ sounding_initialize_static_data(AppState *app)
     {
         char cbuf[32] = {0};
         snprintf(cbuf, sizeof(cbuf), "%.0f hPa", isobars[i]);
-        isobar_labels[i] = TTF_CreateText(app->text_engine, app->font, cbuf, 0);
+        isobar_labels[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
         TTF_SetTextColorFloat(isobar_labels[i], isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
     }
 
@@ -210,7 +210,7 @@ sounding_initialize_static_data(AppState *app)
     {
         char cbuf[32] = {0};
         snprintf(cbuf, sizeof(cbuf), "%.0f °C", isotherms[i]);
-        isotherm_labels[i] = TTF_CreateText(app->text_engine, app->font, cbuf, 0);
+        isotherm_labels[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
         TTF_SetTextColorFloat(isotherm_labels[i], isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
     }
 
@@ -412,7 +412,7 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
         while(*c != '/' && *c != '\\' && c >= source.start) { c--; source_truncated.len++; }
         source_truncated.len--;
         source_truncated.start = c + 1;
-        TTF_Text *source_txt = TTF_CreateText(app->text_engine, app->font, source_truncated.start, source_truncated.len);
+        TTF_Text *source_txt = TTF_CreateText(app->text_engine, app->large_font, source_truncated.start, source_truncated.len);
         TTF_SetTextColorFloat(source_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
         TTF_GetTextSize(source_txt, &tw, &th);
         SDL_FPoint source_txt_start = legend_lr;
@@ -421,7 +421,7 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
 
         char loc_str[64] = {0};
         snprintf(loc_str, sizeof(loc_str), "%.*s (%.2lf, %.2lf)", (int)stn->id.len, stn->id.start, stn->latitude, stn->longitude);
-        TTF_Text *loc_txt = TTF_CreateText(app->text_engine, app->font, loc_str, 0);
+        TTF_Text *loc_txt = TTF_CreateText(app->text_engine, app->large_font, loc_str, 0);
         TTF_SetTextColorFloat(loc_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
         TTF_GetTextSize(loc_txt, &tw, &th);
         SDL_FPoint loc_txt_start = { .x = legend_ul.x + padding, .y = legend_lr.y};
@@ -431,7 +431,7 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
         char date_str[34] = {0};
         ElkStructTime vt = elk_make_struct_time(snd->valid_time);
         snprintf(date_str, sizeof(date_str), "%02d/%02d/%4d %02dZ F%03d", vt.month, vt.day, vt.year, vt.hour, snd->lead_time);
-        TTF_Text *date_txt = TTF_CreateText(app->text_engine, app->font, date_str, 0);
+        TTF_Text *date_txt = TTF_CreateText(app->text_engine, app->large_font, date_str, 0);
         TTF_SetTextColorFloat(date_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
         TTF_GetTextSize(loc_txt, &tw, &th);
         SDL_FPoint date_txt_start = { .x = legend_ul.x + padding, .y = legend_lr.y};
