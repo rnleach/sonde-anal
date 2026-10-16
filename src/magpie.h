@@ -634,6 +634,7 @@ mag_dyn_arena_alloc(MagDynArena *arena, size num_bytes, size alignment)
     if(block)
     {
         arena->current_offset = sizeof(MagDynArenaBlock);
+        arena->current_block = block;
         ptr = mag_dyn_arena_block_alloc(arena, block, num_bytes, alignment);
     }
 
@@ -1309,7 +1310,7 @@ mag_sys_memory_free(MagMemoryBlock *mem)
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                  Linux Implementation
  *---------------------------------------------------------------------------------------------------------------------------
- * Linux specific implementation goes here - things NOT in common with Apple / BSD
+ * emscripten specific implementation goes here
  */
 #include <stdlib.h>
 
