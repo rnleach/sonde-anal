@@ -521,6 +521,7 @@ sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
 static inline b32
 sounding_draw_legend(AppState *app, MagAllocator alloc_)
 {
+    static char const *doy[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     b32 success = true;
 
     if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
@@ -557,18 +558,18 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
         legend_lr.y += (f32)th;
         legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
 
-        char date_str[34] = {0};
+        char date_str[42] = {0};
         ElkStructTime vt = elk_make_struct_time(snd->valid_time);
-        snprintf(date_str, sizeof(date_str), "%02d/%02d/%4d %02dZ F%03d", vt.month, vt.day, vt.year, vt.hour, snd->lead_time);
+        snprintf(date_str, sizeof(date_str), "%s %02d/%02d/%4d %02dZ F%03d",
+                doy[vt.day_of_week], vt.month, vt.day, vt.year, vt.hour, snd->lead_time);
         TTF_Text *date_txt = TTF_CreateText(app->text_engine, app->large_font, date_str, 0);
         TTF_SetTextColorFloat(date_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
-        TTF_GetTextSize(loc_txt, &tw, &th);
+        TTF_GetTextSize(date_txt, &tw, &th);
         SDL_FPoint date_txt_start = { .x = legend_ul.x + padding, .y = legend_lr.y};
         legend_lr.y += (f32)th;
         legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
 
         legend_lr.y += padding;
-        legend_lr.x += padding;
 
         SDL_FPoint border[4] = {0};
         border[0] = legend_ul;
