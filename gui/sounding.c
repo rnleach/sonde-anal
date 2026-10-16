@@ -6,18 +6,21 @@
 #define T_MAX 51.5f
 #define T_MIN -46.5f
 
+#define N_DP 200
+#define DP ((P_MAX - P_MIN) / (f32)(N_DP - 1))
+
 /* --------------------------------------------------------- API --------------------------------------------------------- */
 static inline b32 sounding_initialize_static_data(AppState *app);
 static inline b32 sounding_draw(AppState *app);
 
-/* --------------------------------------------------- Implementations --------------------------------------------------- */
+/* ----------------------------------------------- Isopleth Configuration ------------------------------------------------ */
 
 static f32 const isobar_width         = 0.5f;
 static f32 const isotherm_width       = 0.5f;
 static f32 const freezing_level_width = 2.5f;
-static f32 const temperature_width    = 2.0f;
-static f32 const wet_bulb_width       = 1.0f;
-static f32 const dew_point_width      = 2.0f;
+static f32 const isentrop_width       = 0.5f;
+static f32 const iso_theta_e_width    = 0.5f;
+static f32 const isohume_width        = 0.2f;
 
 static SDL_FColor const isobar_color                = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
 static SDL_FColor const isotherm_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
@@ -25,9 +28,9 @@ static SDL_FColor const isotherm_band_color         = { .r = 0.933333f, .g = 0.9
 static SDL_FColor const freezing_level_color        = { .r = 0.0f,      .g = 0.466667f, .b = 0.780392f, .a = 1.00f };
 static SDL_FColor const hail_growth_zone_color      = { .r = 0.0f,      .g = 0.803921f, .b = 0.803922f, .a = 0.55f };
 static SDL_FColor const dendritic_growth_zone_color = { .r = 0.0f,      .g = 0.466667f, .b = 0.780393f, .a = 0.55f };
-static SDL_FColor const temperature_color           = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
-static SDL_FColor const wet_bulb_color              = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
-static SDL_FColor const dew_point_color             = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const isentrop_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
+static SDL_FColor const iso_theta_e_color           = { .r = 0.333333f, .g = 0.662745f, .b = 0.278431f, .a = 1.00f };
+static SDL_FColor const isohume_color               = { .r = 0.090196f, .g = 0.050980f, .b = 0.360784f, .a = 1.00f };
 
 typedef struct
 {
@@ -35,13 +38,13 @@ typedef struct
     SDL_FPoint p2;
 } SDL_FPoint_Pair;
 
-/* Skew-T area configuration - Isobars */
+/* Isobars configuration */
 static f32 const isobars[] = {1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f }; /* hPa */
 static SDL_FPoint isobars_sdl[ECO_ARRAY_SIZE(isobars)] = {0};
 static TTF_Text *isobar_labels[ECO_ARRAY_SIZE(isobars)] = {0};
 
-/* Skew-T area configuration - Isotherms */
-static f32 const isotherms[] = /* C */
+/* Isotherms configuration */
+static f32 const isotherms[] = /* °C */
     {
           -150.0f, -140.0f, -130.0f, -120.0f, -110.0f, -100.0f, -90.0f, -80.0f, -70.0f, -60.0f, -50.0f,
            -40.0f,  -30.0f,  -20.0f,  -10.0f,    0.0f,    5.0f,  10.0f,  15.0f,  20.0f,  25.0f,  30.0f,
@@ -52,6 +55,43 @@ static SDL_FPoint_Pair isotherms_sdl[ECO_ARRAY_SIZE(isotherms)] = {0};
 static SDL_FPoint hail_growth_zone_points_sdl[4] = {0};
 static SDL_FPoint dendritic_growth_zone_points_sdl[4] = {0};
 static TTF_Text *isotherm_labels[ECO_ARRAY_SIZE(isotherms)] = {0};
+
+/* Isentrops configuration */
+static f32 const isentrops[] = /* Kelvin */
+    {
+        230.0f, 240.0f, 250.0f, 260.0f, 270.0f, 280.0f, 290.0f, 300.0f, 310.0f,
+        320.0f, 330.0f, 340.0f, 350.0f, 360.0f, 370.0f, 380.0f, 390.0f
+    };
+static SDL_FPoint isentrops_sdl[ECO_ARRAY_SIZE(isentrops)][N_DP] = {0};
+
+/* Iso-equivalent potential temperature (theta-e) configuration */
+static f32 const iso_theta_es[] = /* °C */
+    {
+        -20.0f, -16.0f, -12.0f,  -8.0f,  -4.0f,   0.0f,   4.0f,   8.0f,  12.0f,  16.0f,  20.0f,  24.0f,  28.0f,  32.0f,
+         36.0f,  40.0f,  44.0f,  48.0f
+    };
+static SDL_FPoint iso_theta_es_sdl[ECO_ARRAY_SIZE(iso_theta_es)][N_DP] = {0};
+
+
+/* Isohume (mixing ratio) configuration */
+static f32 const isohumes[] = /* g per kg */
+    {
+          2.00f,  2.50f,  3.00f,  4.00f,  5.00f,  6.00f,  7.00f,  8.00f, 10.00f, 12.00f, 14.00f, 16.00f, 18.00f,
+         20.00f, 24.00f, 28.00f, 32.00f, 36.00f, 40.00f, 44.00f, 48.00f, 52.00f, 56.00f, 60.00f, 68.00f, 76.00f
+    };
+static SDL_FPoint_Pair isohumes_sdl[ECO_ARRAY_SIZE(isohumes)] = {0};
+
+/* ------------------------------------------------- Data Configuration -------------------------------------------------- */
+
+static f32 const temperature_width = 2.0f;
+static f32 const wet_bulb_width    = 1.0f;
+static f32 const dew_point_width   = 2.0f;
+
+static SDL_FColor const temperature_color = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+
+/* --------------------------------------------------- Implementations --------------------------------------------------- */
 
 /* Utility functions for coordinate transforms. */
 static inline f32
@@ -188,6 +228,58 @@ sounding_update_static_data(ChartPanel *cp)
         dendritic_growth_zone_points_sdl[3] = screen_p4;
     }
 
+    /* Calculate the screen coordinates of the isentrops */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isentrops); ++i)
+    {
+        SondeKelvin theta = { .val = isentrops[i] };
+        for(i32 ip = 0; ip < N_DP; ++ip)
+        {
+            SondeHectopascal p = { .val = P_MIN + ip * DP };
+            SondeCelsius tc = sonde_temperature_from_pot_temperature(theta, p);
+            SDL_FPoint chart_point = pressure_hpa_temperature_c_to_chart_coords(p, tc, cp);
+            chart_point = chart_panel_apply_pan_and_zoom(chart_point, cp);
+            chart_point = chart_panel_convert_to_screen_coords(chart_point, cp);
+            isentrops_sdl[i][ip] = chart_point;
+        }
+    }
+
+    /* Calculate the screen coordinates of the iso-theta-e lines */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
+    {
+        SondeCelsius theta_e_c = { .val = iso_theta_es[i] };
+        SondeKelvin theta_e_k = sonde_celsius_to_kelvin(theta_e_c);
+        for(i32 ip = 0; ip < N_DP; ++ip)
+        {
+            SondeHectopascal p = { .val = P_MIN + ip * DP };
+            SondeCelsius tc = sonde_temperature_from_equiv_pot_temp_saturated_pressure(p, theta_e_k);
+
+            SDL_FPoint chart_point = pressure_hpa_temperature_c_to_chart_coords(p, tc, cp);
+            chart_point = chart_panel_apply_pan_and_zoom(chart_point, cp);
+            chart_point = chart_panel_convert_to_screen_coords(chart_point, cp);
+            iso_theta_es_sdl[i][ip] = chart_point;
+        }
+    }
+
+    /* Calculate the screen coordinates of the isohumes */
+    SondeHectopascal p_min_isohumes = { .val = 300.0f };
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isohumes); ++i)
+    {
+        f32 mw = isohumes[i] / 1000.0; /* convert from g/kg to unitless */
+        SondeCelsius tc_pmax = sonde_dew_point_from_p_and_mw(p_max, mw);
+        SondeCelsius tc_pmin = sonde_dew_point_from_p_and_mw(p_min_isohumes, mw);
+
+        SDL_FPoint chart_p1 = pressure_hpa_temperature_c_to_chart_coords(p_max, tc_pmax, cp);
+        SDL_FPoint chart_p2 = pressure_hpa_temperature_c_to_chart_coords(p_min_isohumes, tc_pmin, cp);
+
+        chart_p1 = chart_panel_apply_pan_and_zoom(chart_p1, cp);
+        chart_p2 = chart_panel_apply_pan_and_zoom(chart_p2, cp);
+
+        SDL_FPoint screen_p1 = chart_panel_convert_to_screen_coords(chart_p1, cp);
+        SDL_FPoint screen_p2 = chart_panel_convert_to_screen_coords(chart_p2, cp);
+
+        isohumes_sdl[i] = (SDL_FPoint_Pair){ .p1 = screen_p1, .p2 = screen_p2 };
+    }
+
     return true;
 }
 
@@ -260,12 +352,32 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
         DrawPolygonThick(app->renderer, dendritic_growth_zone_points_sdl, ECO_ARRAY_SIZE(dendritic_growth_zone_points_sdl), 0.0f, dendritic_growth_zone_color, dendritic_growth_zone_color, alloc_);
     }
 
+    /* Draw the isohumes */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isohumes); ++i)
+    {
+        SDL_FPoint p1 = isohumes_sdl[i].p1;
+        SDL_FPoint p2 = isohumes_sdl[i].p2;
+        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isohume_width, isohume_color); Assert(success);
+    }
+
+    /* Draw the iso_theta_es */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
+    {
+        success &= DrawPolylineThickAA(app->renderer, &iso_theta_es_sdl[i][0], N_DP, iso_theta_e_width, iso_theta_e_color, alloc_); Assert(success);
+    }
+
+    /* Draw the isentropes. */
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isentrops); ++i)
+    {
+        success &= DrawPolylineThickAA(app->renderer, &isentrops_sdl[i][0], N_DP, isentrop_width, isentrop_color, alloc_); Assert(success);
+    }
+
     /* Draw the isobars. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
         SDL_FPoint p1 = {.x = cp->x_offset,     .y = isobars_sdl[i].y };
         SDL_FPoint p2 = {.x = w + cp->x_offset, .y = isobars_sdl[i].y };
-        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isobar_width, isobar_color);
+        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isobar_width, isobar_color); Assert(success);
     }
 
     /* Draw the isotherms. */
@@ -275,7 +387,7 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
         f32 width = isotherms[i] == 0.0f && app->show_freezing_level ? freezing_level_width : isotherm_width;
 
         SDL_FPoint_Pair pair = isotherms_sdl[i];
-        success &= DrawLineThickRoundedAA(app->renderer, pair.p1, pair.p2, width, color);
+        success &= DrawLineThickRoundedAA(app->renderer, pair.p1, pair.p2, width, color); Assert(success);
     }
 
     /* ---------- Do a second pass to draw the labels on top of everything else in the background. */
@@ -473,18 +585,24 @@ sounding_draw(AppState *app)
     if(cp->needs_background_update)
     {
         cp->needs_background_update = false;
-        success &= sounding_update_static_data(cp);
+        success &= sounding_update_static_data(cp);                       Assert(success);
     }
 
     /* Set up clipping area. */
     SDL_SetRenderClipRect(app->renderer, &cp->clipping);
 
-    success &= sounding_draw_background(app, alloc_);
-    success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_);
-    success &= sounding_draw_legend(app, alloc_);
+    success &= sounding_draw_background(app, alloc_);                     Assert(success);
+    success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_); Assert(success);
+    success &= sounding_draw_legend(app, alloc_);                         Assert(success);
 
     /* Reset the clipping rect and return. */
     SDL_SetRenderClipRect(app->renderer, NULL);
     return success;
 }
 
+#undef P_MAX
+#undef P_MIN
+#undef T_MAX
+#undef T_MIN
+#undef DP
+#undef N_DP
