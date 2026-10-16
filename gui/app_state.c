@@ -35,6 +35,8 @@ typedef struct
     b32 show_hail_growth_zone;
     b32 show_dendritic_growth_zone;
     b32 show_wet_bulb;
+    b32 show_isohumes;
+    b32 show_equivalent_pot_temp;
 
     /* Debug Window Information. */
     bool show_debug;
@@ -80,6 +82,8 @@ app_state_initialize(
     app->show_hail_growth_zone = true;
     app->show_dendritic_growth_zone = true;
     app->show_wet_bulb = false;
+    app->show_isohumes = false;
+    app->show_equivalent_pot_temp = false;
 
     app->show_skew_t_context_menu = false;
 }

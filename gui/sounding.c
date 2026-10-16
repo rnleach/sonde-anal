@@ -353,17 +353,23 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
     }
 
     /* Draw the isohumes */
-    for(i32 i = 0; i < ECO_ARRAY_SIZE(isohumes); ++i)
+    if(app->show_isohumes)
     {
-        SDL_FPoint p1 = isohumes_sdl[i].p1;
-        SDL_FPoint p2 = isohumes_sdl[i].p2;
-        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isohume_width, isohume_color); Assert(success);
+        for(i32 i = 0; i < ECO_ARRAY_SIZE(isohumes); ++i)
+        {
+            SDL_FPoint p1 = isohumes_sdl[i].p1;
+            SDL_FPoint p2 = isohumes_sdl[i].p2;
+            success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isohume_width, isohume_color); Assert(success);
+        }
     }
 
     /* Draw the iso_theta_es */
-    for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
+    if(app->show_equivalent_pot_temp)
     {
-        success &= DrawPolylineThickAA(app->renderer, &iso_theta_es_sdl[i][0], N_DP, iso_theta_e_width, iso_theta_e_color, alloc_); Assert(success);
+        for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
+        {
+            success &= DrawPolylineThickAA(app->renderer, &iso_theta_es_sdl[i][0], N_DP, iso_theta_e_width, iso_theta_e_color, alloc_); Assert(success);
+        }
     }
 
     /* Draw the isentropes. */

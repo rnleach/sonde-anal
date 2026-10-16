@@ -296,7 +296,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
     return SDL_APP_CONTINUE;
 }
 
-i32 const skew_t_context_menu_width = 150;
+i32 const skew_t_context_menu_width = 200;
 i32 const skew_t_context_menu_height = 400;
 
 SDL_AppResult 
@@ -558,7 +558,6 @@ SDL_AppIterate(void *appstate)
                 if(nk_checkbox_label(ctx, "Show Wet Bulb", &app->show_wet_bulb)) 
                 { 
                     app->show_skew_t_context_menu = false; 
-                    nk_popup_close(ctx);
                 }
 
                 nk_menu_separator(app->ctx);
@@ -567,19 +566,26 @@ SDL_AppIterate(void *appstate)
                 if(nk_checkbox_label(ctx, "Show Freezing Level", &app->show_freezing_level)) 
                 { 
                     app->show_skew_t_context_menu = false; 
-                    nk_popup_close(ctx);
                 }
 
                 if(nk_checkbox_label(ctx, "Show Hail Growth", &app->show_hail_growth_zone)) 
                 { 
                     app->show_skew_t_context_menu = false; 
-                    nk_popup_close(ctx);
                 }
 
                 if(nk_checkbox_label(ctx, "Show Dendritic Growth", &app->show_dendritic_growth_zone)) 
                 { 
                     app->show_skew_t_context_menu = false; 
-                    nk_popup_close(ctx);
+                }
+                
+                if(nk_checkbox_label(ctx, "Show Mixing Ratios", &app->show_isohumes)) 
+                { 
+                    app->show_skew_t_context_menu = false; 
+                }
+                
+                if(nk_checkbox_label(ctx, "Show ThetaE", &app->show_equivalent_pot_temp)) 
+                { 
+                    app->show_skew_t_context_menu = false; 
                 }
                 
                 nk_group_end(ctx);
