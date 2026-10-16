@@ -752,7 +752,7 @@ sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, Son
     f64 params[2] = {p.val, theta_e.val};
 
     f64 max_t = sonde_dew_point_from_vapor_pressure(p).val;
-    if(isnan(max_t)) { return (SondeCelsius){ .val = max_t }; }
+    if(isnan(max_t)) { max_t = SONDE_MAX_T_VP_LIQUID_C; }
 
     f64 t_c = sonde_find_root(
             sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_,

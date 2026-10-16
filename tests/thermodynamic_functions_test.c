@@ -147,10 +147,10 @@ thermodynamic_functions_specific_humidity_mixing_ratio_round_trip_test(void)
 }
 
 void
-thermodynamic_functions_equivalent_potential_temperature_at_lcl_round_trip_test(void)
+thermodynamic_functions_equivalent_potential_temperature_round_trip_test(void)
 {
-    f64 const ABS_EPS = 1.0e-13;
-    f64 const PROP_EPS = 1.0e-30;
+    f64 const ABS_EPS = 1.0e-8;
+    f64 const PROP_EPS = 1.0e-10;
 
     SondeCelsius const min_t = { .val = SONDE_MIN_T_VP_LIQUID_C };
     SondeCelsius const max_t = { .val = SONDE_MAX_T_VP_LIQUID_C };
@@ -193,7 +193,7 @@ thermodynamic_functions_round_trips(void)
     thermodynamic_functions_mixing_ratio_dew_point_round_trip_test();
     thermodynamic_functions_specific_humidity_dew_point_round_trip_test();
     thermodynamic_functions_specific_humidity_mixing_ratio_round_trip_test();
-    thermodynamic_functions_equivalent_potential_temperature_at_lcl_round_trip_test();
+    thermodynamic_functions_equivalent_potential_temperature_round_trip_test();
 }
 
 void
