@@ -3,6 +3,7 @@
 /* --------------------------------------------------------- API --------------------------------------------------------- */
 
 b32 DrawPointRound(SDL_Renderer *r, SDL_FPoint point, f32 diameter, SDL_FColor color);
+b32 DrawPointRoundAA(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColor color);
 
 b32 DrawLineThick(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2,  f32 width, SDL_FColor color);
 b32 DrawLineThickRoundedAA(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2, f32 width, SDL_FColor color);
@@ -125,6 +126,105 @@ DrawPointRound(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColo
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, segments + 1, indices, segments * 3);
+}
+
+/* Draws a filled, anti-aliased round point (circle) with a specified diameter using SDL3 geometry. */
+b32 
+DrawPointRoundAA(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColor color)
+{
+    StopIf(!renderer || diameter <= 0.0f, return false);
+
+    f32 radius = diameter * 0.5f;
+
+    /* Dynamically scale circle smoothness with size (min 8, max 64 segments) */
+    int segments = (int) diameter;
+    if(segments < 8)  { segments = 8;  }
+    if(segments > 64) { segments = 64; }
+
+    /* 
+     * Vertex & Index budgeting for AA:
+     * - 1 Center vertex
+     * - `segments` Inner core vertices (at radius - 0.5f)
+     * - `segments` Outer AA ring vertices (at radius + 0.5f)
+     * Max segments = 64 -> 1 + 64 + 64 = 129 vertices.
+     * Max indices = (segments * 3 core triangles) + (segments * 6 border quad triangles) = segments * 9.
+     */
+    i32 total_vertices = 1 + (segments * 2);
+    i32 total_indices = segments * 9;
+
+    SDL_Vertex vertices[129] = {0};
+    int indices[576] = {0};
+
+    /* Define inner and outer AA boundaries */
+    f32 r_inner = fmaxf(0.0f, radius - 0.5f);
+    f32 r_outer = radius + 0.5f;
+
+    /* Center vertex */
+    vertices[0].position = point;
+    vertices[0].color = color;
+
+    f32 angle_step = (2.0f * (f32)ELK_PI) / (f32)segments;
+
+    /* Transparent color variant for the outer AA ring */
+    SDL_FColor color_transparent = color;
+    color_transparent.a = 0.0f;
+
+    /* Populate inner and outer ring vertices */
+    for(i32 i = 0; i < segments; i++)
+    {
+        f32 angle = i * angle_step;
+        f32 cos_a = cosf(angle);
+        f32 sin_a = sinf(angle);
+
+        /* Inner core vertex (full opacity) */
+        vertices[1 + i].position = (SDL_FPoint)
+            {
+                point.x + cos_a * r_inner,
+                point.y + sin_a * r_inner
+            };
+
+        vertices[1 + i].color = color;
+
+        /* Outer AA ring vertex (zero opacity) */
+        vertices[1 + segments + i].position = (SDL_FPoint)
+            {
+                point.x + cos_a * r_outer,
+                point.y + sin_a * r_outer
+            };
+
+        vertices[1 + segments + i].color = color_transparent;
+    }
+
+    /* Populate indices for core fan + border quads */
+    i32 index_idx = 0;
+    for (i32 i = 0; i < segments; i++)
+    {
+        i32 next_i = (i + 1 == segments) ? 0 : i + 1;
+
+        i32 c_idx = 0;
+        i32 in_curr = 1 + i;
+        i32 in_next = 1 + next_i;
+        i32 out_curr = 1 + segments + i;
+        i32 out_next = 1 + segments + next_i;
+
+        /* Core triangle fan (Center -> Inner Curr -> Inner Next) */
+        indices[index_idx++] = c_idx;
+        indices[index_idx++] = in_curr;
+        indices[index_idx++] = in_next;
+
+        /* Border quad triangle 1 (Inner Curr -> Outer Curr -> Outer Next) */
+        indices[index_idx++] = in_curr;
+        indices[index_idx++] = out_curr;
+        indices[index_idx++] = out_next;
+
+        /* Border quad triangle 2 (Inner Curr -> Outer Next -> Inner Next) */
+        indices[index_idx++] = in_curr;
+        indices[index_idx++] = out_next;
+        indices[index_idx++] = in_next;
+    }
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    return SDL_RenderGeometry(renderer, NULL, vertices, total_vertices, indices, total_indices);
 }
 
 b32 

@@ -83,13 +83,18 @@ static SDL_FPoint_Pair isohumes_sdl[ECO_ARRAY_SIZE(isohumes)] = {0};
 
 /* ------------------------------------------------- Data Configuration -------------------------------------------------- */
 
-static f32 const temperature_width = 2.0f;
-static f32 const wet_bulb_width    = 1.0f;
-static f32 const dew_point_width   = 2.0f;
+static f32 const temperature_width      =  2.0f;
+static f32 const wet_bulb_width         =  1.0f;
+static f32 const dew_point_width        =  2.0f;
+static f32 const wind_barb_dot_width    =  7.0f;
+static f32 const wind_barb_shaft_width  =  1.0f;
+static f32 const wind_barb_shaft_length = 35.0f;
+static f32 const wind_barb_barb_length  = 15.0f;
 
 static SDL_FColor const temperature_color = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 
@@ -591,6 +596,169 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
     return success;
 }
 
+#define N_BARB_SLOTS 5
+typedef struct
+{
+    SDL_FPoint center;
+    SDL_FPoint tail;
+    SDL_FPoint penants[N_BARB_SLOTS][3];
+    i8 n_penants;
+    i8 n_barbs;
+    i8 n_half_barbs;
+} WindBarb;
+
+static inline WindBarb
+sounding_draw_wind_create_barb(SondeUVMps w)
+{
+    f32 speed_kts = sqrt(w.u * w.u + w.v * w.v) * 1.9438444924406048;
+    i32 speed = (i32)roundf(speed_kts);
+
+    WindBarb b = {0};
+    b.n_penants = (speed / 50) & 0xFF;
+    b.n_barbs = ((speed - b.n_penants * 50) / 10) &0xFF;
+    b.n_half_barbs = ((speed - b.n_penants * 50 - b.n_barbs * 10) / 5) & 0xFF;
+
+    b.tail.x = -wind_barb_shaft_length;
+
+    /* Calculate Penants And Barbs */
+    f32 x = -wind_barb_shaft_length;
+    
+    i32 i = 0;
+    for(; i < b.n_penants && i < N_BARB_SLOTS; ++i)
+    {
+        b.penants[i][0] = (SDL_FPoint){ .x = x + 0.0f, .y =  0.0f };
+        b.penants[i][1] = (SDL_FPoint){ .x = x + 0.0f, .y = 15.0f };
+        b.penants[i][2] = (SDL_FPoint){ .x = x + 5.0f, .y =  0.0f };
+        x += 7.0f;
+    }
+
+    for(; i < b.n_penants + b.n_barbs && i < N_BARB_SLOTS; ++i)
+    {
+        b.penants[i][0] = (SDL_FPoint){ .x = x + 0.0f, .y =  0.0f };
+        b.penants[i][1] = (SDL_FPoint){ .x = x + 0.0f, .y = 15.0f };
+        x += 7.0f;
+    }
+
+    for(; i < b.n_penants + b.n_barbs + b.n_half_barbs && i < N_BARB_SLOTS; ++i)
+    {
+        b.penants[i][0] = (SDL_FPoint){ .x = x + 0.0f, .y = 0.0f };
+        b.penants[i][1] = (SDL_FPoint){ .x = x + 0.0f, .y = 7.5f };
+        x += 7.0f;
+    }
+
+    return b;
+}
+
+static inline SDL_FPoint
+sounding_draw_wind_rotate_point(SDL_FPoint p, f32 u, f32 v)
+{
+    SDL_FPoint pr = p;
+    f32 hypot = hypotf(u, v);
+
+    f32 s = v / hypot;
+    f32 c = u / hypot;
+    pr.x = p.x * c - p.y * s;
+    pr.y = -(p.x * s + p.y * c);
+    
+    return pr;
+}
+
+static inline WindBarb
+sounding_draw_wind_rotate_and_translate(WindBarb b, SondeUVMps w, SondeHectopascal p, ChartPanel *cp, f32 *ymax, f32 *ymin)
+{
+    WindBarb b2 = b;
+    *ymax = cp->clipping.y;
+    *ymin = cp->clipping.y + cp->clipping.h;
+
+    /* Get the location to plot the point */
+    SDL_FPoint loc = pressure_hpa_temperature_c_to_chart_coords(p, (SondeCelsius){ .val = 0.0f }, cp);
+    loc = chart_panel_apply_pan_and_zoom(loc, cp);
+    loc = chart_panel_convert_to_screen_coords(loc, cp);
+    loc.x = cp->clipping.x + cp->clipping.w - wind_barb_shaft_length - 10.0;
+
+    /* Rotate and translate each point */
+    b2.center.x += loc.x; b2.center.y += loc.y;
+    *ymax = b2.center.y < *ymax ? *ymax : b2.center.y;
+    *ymin = b2.center.y > *ymin ? *ymin : b2.center.y;
+
+    b2.tail = sounding_draw_wind_rotate_point(b.tail, w.u, w.v);
+    b2.tail.x += loc.x; b2.tail.y += loc.y;
+    *ymax = b2.tail.y < *ymax ? *ymax : b2.tail.y;
+    *ymin = b2.tail.y > *ymin ? *ymin : b2.tail.y;
+
+    SDL_FPoint *arr = &b2.penants[0][0];
+    for(i32 i = 0; i < sizeof(b.penants) / sizeof(b.penants[0][0]); ++i)
+    {
+        arr[i] = sounding_draw_wind_rotate_point(arr[i], w.u, w.v);
+        arr[i].x += loc.x; arr[i].y += loc.y; 
+        *ymax = arr[i].y < *ymax ? *ymax : arr[i].y;
+        *ymin = arr[i].y > *ymin ? *ymin : arr[i].y;
+    }
+
+    return b2;
+}
+
+static inline b32
+sounding_draw_wind_draw_barb(AppState *app, WindBarb b, MagAllocator alloc_)
+{
+    b32 success = true;
+
+    success &= DrawPointRoundAA(app->renderer, b.center, wind_barb_dot_width, wind_color);
+    success &= DrawLineThickRoundedAA(app->renderer, b.center, b.tail, wind_barb_shaft_width, wind_color);
+
+    i32 i = 0;
+    for(; i < b.n_penants && i < N_BARB_SLOTS; ++i)
+    {
+        success &= DrawPolygonThick(app->renderer, &b.penants[i][0], 3, 1.0f, wind_color, wind_color, alloc_); Assert(success);
+    }
+
+    for(; i < b.n_penants + b.n_barbs + b.n_half_barbs && i < N_BARB_SLOTS; ++i)
+    {
+        success &= DrawLineThickRoundedAA(app->renderer, b.penants[i][0], b.penants[i][1], wind_barb_shaft_width, wind_color); Assert(success);
+    }
+
+    return success;
+}
+
+static inline b32
+sounding_draw_wind(AppState *app, MagAllocator alloc_)
+{
+    ChartPanel *cp = &app->skewt;
+
+    b32 success = true;
+
+    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    {
+        SondeSounding *snd = app->sndgs[app->current_sndg];
+
+        f32 last_min_y = cp->clipping.y + cp->clipping.h;
+
+        for(size l = 0; l < pak_len(&snd->levels); ++l)
+        {
+            SondeHectopascal p = snd->p[l];
+            SondeUVMps w = snd->uv_wind[l];
+
+            if(!isnan(p.val) && !isnan(w.u) && !isnan(w.v))
+            {
+                /* Some variables for tracking overlap and thinning. */
+                f32 max_y;
+                f32 min_y;
+
+                WindBarb b = sounding_draw_wind_create_barb(w);
+                b = sounding_draw_wind_rotate_and_translate(b, w, p, cp, &max_y, &min_y);
+
+                if(max_y < last_min_y) /* Only draw if it doesn't overlap the one below it. */
+                {
+                    success &= sounding_draw_wind_draw_barb(app, b, alloc_); Assert(success);
+                    last_min_y = min_y;
+                }
+            }
+        }
+    }
+
+    return success;
+}
+
 static inline b32
 sounding_draw(AppState *app)
 {
@@ -610,6 +778,7 @@ sounding_draw(AppState *app)
     SDL_SetRenderClipRect(app->renderer, &cp->clipping);
 
     success &= sounding_draw_background(app, alloc_);                     Assert(success);
+    success &= sounding_draw_wind(app, alloc_);                           Assert(success);
     success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_); Assert(success);
     success &= sounding_draw_legend(app, alloc_);                         Assert(success);
 
