@@ -493,9 +493,20 @@ sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
             }
         }
 
-        success &= DrawPolylineThickAA(app->renderer, t_pnts, pak_len(&t_ledger), temperature_width, temperature_color, alloc_);
-        success &= DrawPolylineThickAA(app->renderer, dp_pnts, pak_len(&dp_ledger), dew_point_width, dew_point_color, alloc_);
-        success &= DrawPolylineThickAA(app->renderer, wb_pnts, pak_len(&wb_ledger), wet_bulb_width, wet_bulb_color, alloc_);
+        if(!pak_array_ledger_empty(&t_ledger))
+        {
+            success &= DrawPolylineThickAA(app->renderer, t_pnts, pak_len(&t_ledger), temperature_width, temperature_color, alloc_); Assert(success);
+        }
+
+        if(!pak_array_ledger_empty(&dp_ledger))
+        {
+            success &= DrawPolylineThickAA(app->renderer, dp_pnts, pak_len(&dp_ledger), dew_point_width, dew_point_color, alloc_); Assert(success);
+        }
+
+        if(!pak_array_ledger_empty(&wb_ledger))
+        {
+            success &= DrawPolylineThickAA(app->renderer, wb_pnts, pak_len(&wb_ledger), wet_bulb_width, wet_bulb_color, alloc_); Assert(success);
+        }
     }
 
     return success;
