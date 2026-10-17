@@ -403,8 +403,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                     app->current_sndg = (app->current_sndg + 1) % app->n_soundings; 
 
                     SDL_FPoint locf = app->mouse_loc;
-                    SDL_Point loc = { .x = (i32)locf.x, .y = (i32)locf.y };
-                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
+                    if(chart_panel_point_inside(&app->skewt, locf)) { sounding_sample(app, locf); }
                 }
 
                 if(event->key.key == SDLK_LEFT)
@@ -412,25 +411,23 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                     app->current_sndg = (app->current_sndg + app->n_soundings - 1) % app->n_soundings; 
 
                     SDL_FPoint locf = app->mouse_loc;
-                    SDL_Point loc = { .x = (i32)locf.x, .y = (i32)locf.y };
-                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
+                    if(chart_panel_point_inside(&app->skewt, locf)) { sounding_sample(app, locf); }
                 }
 
             } break;
 
         case SDL_EVENT_MOUSE_MOTION:
             {
-                SDL_Point loc = { .x = (i32)event->motion.x, .y = (i32)event->motion.y };
                 SDL_FPoint locf = { .x = event->motion.x, .y = event->motion.y };
 
                 if(event->motion.state == SDL_BUTTON_LEFT)
                 {
-                    if(SDL_PointInRect(&loc, &app->skewt.area)) { chart_panel_pan(&app->skewt, app->mouse_loc, locf); }
+                    if(chart_panel_point_inside(&app->skewt, locf)) { chart_panel_pan(&app->skewt, app->mouse_loc, locf); }
                     /* TODO: Add other panels here as needed. */
                 }
                 else if(event->motion.state == 0)
                 {
-                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
+                    if(chart_panel_point_inside(&app->skewt, locf)) { sounding_sample(app, locf); }
                     /* TODO: Add other panels here as needed. */
                 }
 
@@ -439,8 +436,8 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
         case SDL_EVENT_MOUSE_WHEEL:
             {
-                SDL_Point loc = { .x = (i32)event->wheel.mouse_x, .y = (i32)event->wheel.mouse_y };
-                if(SDL_PointInRect(&loc, &app->skewt.area))
+                SDL_FPoint locf = { .x = event->wheel.mouse_x, .y = event->wheel.mouse_y };
+                if(chart_panel_point_inside(&app->skewt, locf))
                 {
                     ChartPanel *cp = &app->skewt;
                     SDL_FPoint locf = { .x = event->wheel.mouse_x, .y = event->wheel.mouse_y };
@@ -449,6 +446,9 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                     f32 zf = event->wheel.y > 0.0f ? factor : event->wheel.y < 0.0f ?  1.0f / factor : 1.0f;
 
                     chart_panel_handle_zoom(cp, locf, zf);
+
+                    if(chart_panel_point_inside(&app->skewt, app->mouse_loc)) { sounding_sample(app, app->mouse_loc); }
+                    /* TODO: Add other panels here as needed. */
                 }
 
             } break;

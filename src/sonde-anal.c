@@ -290,6 +290,7 @@ typedef struct
     SondeUVMps uv_wind;
 } SondeSoundingRow;
 
+static inline f64 sonde_lerp(f64 x0, f64 y0, f64 x1, f64 y1, f64 x);
 SondeSoundingRow sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p);
 
 /***************************************************************************************************************************
@@ -1813,6 +1814,15 @@ sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes)
         sonde_sounding_fill_in_profiles(current->snd, pcodes);
         current = current->next;
     }
+}
+
+static inline f64
+sonde_lerp(f64 x0, f64 y0, f64 x1, f64 y1, f64 x)
+{
+    f64 dx = x - x0;
+    f64 rise = y1 - y0;
+    f64 run = x1 - x0;
+    return rise / run * dx + y0;
 }
 
 #define PRESSURE_LERP_UOM(sample, var, snd, prof, i, dp, run, type) do                                                          \

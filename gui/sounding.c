@@ -97,6 +97,12 @@ static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b
 static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 
+/* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
+static f32 const sample_bar_width = 2.0f;
+
+static SDL_FColor const sample_bar_color  = { .r = 0.9f,      .g = 0.2f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const black             = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 
 /* Utility functions for coordinate transforms. */
@@ -762,6 +768,85 @@ sounding_draw_wind(AppState *app, MagAllocator alloc_)
 }
 
 static inline b32
+sounding_draw_sample(AppState *app, MagAllocator alloc_)
+{
+    ChartPanel *cp = &app->skewt;
+    b32 success = true;
+
+    b32 do_draw_sample =
+        app->sample.type == SAMPLE_TYPE_SKEWT        && 
+        chart_panel_point_inside(cp, app->mouse_loc) &&
+        app->current_sndg >= 0                       &&
+        app->sndgs                                   &&
+        app->sndgs[app->current_sndg];
+
+    if(do_draw_sample)
+    {
+        SDL_FPoint p1 = app->mouse_loc; p1.x = (f32)app->skewt.clipping.x;
+        SDL_FPoint p2 = app->mouse_loc; p2.x = (f32)(app->skewt.clipping.x + app->skewt.clipping.w);
+        success &= DrawLineThickRoundedAA(app->renderer, p1, p2, sample_bar_width, sample_bar_color); Assert(success);
+
+        f32 const padding = 6.0f;
+        f32 const border_width = 3.0f;
+
+        SDL_FPoint sample_ul = { .x = 10.0f, .y = p1.y };
+        SDL_FPoint sample_lr = { .x = sample_ul.x + padding, .y = sample_ul.y + padding };
+        i32 tw, th;
+
+        /* Temperatures Line. */
+        char t_str[64] = {0};
+        SondeCelsius t_c = app->sample.row.t; SondeFahrenheit t_f = sonde_celsius_to_fahrenheit(t_c);
+        SondeCelsius dp_c = app->sample.row.dp; SondeFahrenheit dp_f = sonde_celsius_to_fahrenheit(dp_c);
+        if(!isnan(dp_c.val))
+        {
+            snprintf(t_str, sizeof(t_str), "%.0lf°C / %.0lf°C  [%.0lf°F / %.0lf°F]", t_c.val, dp_c.val, t_f.val, dp_f.val); 
+        }
+        else
+        {
+            snprintf(t_str, sizeof(t_str), "%.0lf°C / ----°C  [%.0lf°F / ----°F]", t_c.val, t_f.val); 
+        }
+
+        TTF_Text *t_txt = TTF_CreateText(app->text_engine, app->large_font, t_str, 0);
+        TTF_SetTextColorFloat(t_txt, black.r, black.g, black.b, black.a);
+        TTF_GetTextSize(t_txt, &tw, &th);
+        SDL_FPoint t_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        sample_lr.y += (f32)th;
+        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
+
+        sample_lr.y += padding;
+
+        SDL_FPoint border[4] = {0};
+        border[0] = sample_ul;
+        border[1] = (SDL_FPoint){ .x = sample_ul.x, .y = sample_lr.y };
+        border[2] = sample_lr;
+        border[3] = (SDL_FPoint){ .x = sample_lr.x, .y = sample_ul.y };
+
+        /* Make adjustments for bottom of the screen */
+        if(border[2].y > (f32)cp->area.h)
+        {
+            f32 dy = (f32)cp->area.h - border[2].y;
+            t_txt_start.y += dy;
+            border[0].y += dy;
+            border[1].y += dy;
+            border[2].y += dy;
+            border[3].y += dy;
+            /* TODO - don't forget this when adding lines to the sample */
+        }
+
+        /* Draw box for sample. */
+        success &= DrawPolygonThick(app->renderer, border, ECO_ARRAY_SIZE(border), border_width, sample_bar_color, app->background, alloc_);
+
+        /* Draw text */
+        TTF_DrawRendererText(t_txt, t_txt_start.x, t_txt_start.y);
+
+        /* Clean up allocated text. */
+        TTF_DestroyText(t_txt);
+    }
+
+    return success;
+}
+
+static inline b32
 sounding_draw(AppState *app)
 {
     ChartPanel *cp = &app->skewt;
@@ -781,6 +866,7 @@ sounding_draw(AppState *app)
     success &= sounding_draw_background(app, alloc_);                     Assert(success);
     success &= sounding_draw_wind(app, alloc_);                           Assert(success);
     success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_); Assert(success);
+    success &= sounding_draw_sample(app, alloc_);                         Assert(success);
     success &= sounding_draw_legend(app, alloc_);                         Assert(success);
 
     /* Reset the clipping rect and return. */
