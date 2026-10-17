@@ -654,7 +654,7 @@ static inline SDL_FPoint
 sounding_draw_wind_rotate_point(SDL_FPoint p, f32 u, f32 v)
 {
     SDL_FPoint pr = p;
-    f32 hypot = hypotf(u, v);
+    f32 hypot = sqrtf(u *u + v * v);
 
     f32 s = v / hypot;
     f32 c = u / hypot;
