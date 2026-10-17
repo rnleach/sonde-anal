@@ -377,8 +377,11 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         if(SDL_PointInRect(&loc, &skew_t_context_menu_rect)) { return SDL_APP_CONTINUE; }
     }
     
-    /* Skip event processing if interacting with standard active Nuklear UI elements (like the layout bar). */
-    if(nk_item_is_any_active(app->ctx)) { return SDL_APP_CONTINUE; }
+    /* Skip mouse event processing if interacting with standard active Nuklear UI elements. */
+    if(nk_item_is_any_active(app->ctx) && event->type >= SDL_EVENT_MOUSE_MOTION && event->type <= SDL_EVENT_MOUSE_REMOVED )
+    {
+        return SDL_APP_CONTINUE; 
+    }
 
     switch (event->type)
     {
