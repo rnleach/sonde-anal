@@ -270,6 +270,28 @@ SondeSoundingList *sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr tx
 void sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes);
 void sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes); 
 
+/* Querying */
+typedef struct
+{
+    SondeHectopascal p;
+    SondeCelsius t;
+    SondeCelsius dp;
+    SondeCelsius wb;
+    SondeCelsius vt;
+    SondeKelvin theta;
+    SondeKelvin theta_e;
+    SondeHectopascalPerSecond pvv;
+    SondeMeter hgt;
+    f64 cloud_fraction;
+    f64 rh;
+    f64 rh_ice;
+    SondeCelsius fp;
+    SondeSpdDirKts wind;
+    SondeUVMps uv_wind;
+} SondeSoundingRow;
+
+SondeSoundingRow sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p);
+
 /***************************************************************************************************************************
  *                                                      Implementations
  **************************************************************************************************************************/
@@ -752,7 +774,7 @@ sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, Son
     f64 params[2] = {p.val, theta_e.val};
 
     f64 max_t = sonde_dew_point_from_vapor_pressure(p).val;
-    if(isnan(max_t)) { return (SondeCelsius){ .val = max_t }; }
+    if(isnan(max_t)) { max_t = SONDE_MAX_T_VP_LIQUID_C; }
 
     f64 t_c = sonde_find_root(
             sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_,
@@ -1791,5 +1813,71 @@ sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes)
         sonde_sounding_fill_in_profiles(current->snd, pcodes);
         current = current->next;
     }
+}
+
+#define PRESSURE_LERP_UOM(sample, var, snd, prof, i, dp, run, type) do                                                          \
+{                                                                                                                           \
+    type v0 = snd->prof[i + 0];                                                                                             \
+    type v1 = snd->prof[i + 1];                                                                                             \
+    f64 rise = v1.val - v0.val;                                                                                             \
+    type v = (type){ .val = rise / run * dp + v0.val };                                                                     \
+    sample.var = v;                                                                                                         \
+} while(false)
+
+#define PRESSURE_LERP(sample, var, snd, prof, i, dp, run, type) do                                                          \
+{                                                                                                                           \
+    type v0 = snd->prof[i + 0];                                                                                             \
+    type v1 = snd->prof[i + 1];                                                                                             \
+    f64 rise = v1 - v0;                                                                                             \
+    type v = (type)(rise / run * dp + v0 );                                                                     \
+    sample.var = v;                                                                                                         \
+} while(false)
+
+SondeSoundingRow 
+sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p)
+{
+    SondeSoundingRow sample = {0};
+
+    /* Do linear search */
+    for(i32 i = 0; i < pak_len(&snd->levels) - 1; ++i)
+    {
+        /* Assume we're starting at high pressure and working our way up the sounding. */
+        SondeHectopascal p0 = snd->p[i + 0];
+        SondeHectopascal p1 = snd->p[i + 1];
+
+        if(p0.val >= p.val && p.val > p1.val)
+        {
+            f64 dp = p.val - p0.val;
+            f64 run = p1.val - p0.val;
+            sample.p = p;
+
+            PRESSURE_LERP_UOM(sample, t, snd, t, i, dp, run, SondeCelsius);
+            PRESSURE_LERP_UOM(sample, dp, snd, dp, i, dp, run, SondeCelsius);
+            PRESSURE_LERP_UOM(sample, wb, snd, wb, i, dp, run, SondeCelsius);
+            PRESSURE_LERP_UOM(sample, vt, snd, vt, i, dp, run, SondeCelsius);
+            PRESSURE_LERP_UOM(sample, theta, snd, theta, i, dp, run, SondeKelvin);
+            PRESSURE_LERP_UOM(sample, theta_e, snd, theta_e, i, dp, run, SondeKelvin);
+            PRESSURE_LERP_UOM(sample, pvv, snd, pvv, i, dp, run, SondeHectopascalPerSecond);
+            PRESSURE_LERP_UOM(sample, hgt, snd, hgt, i, dp, run, SondeMeter);
+            PRESSURE_LERP(sample, cloud_fraction, snd, cloud_fraction, i, dp, run, f64);
+            PRESSURE_LERP(sample, rh, snd, rh, i, dp, run, f64);
+            PRESSURE_LERP(sample, rh_ice, snd, rh_ice, i, dp, run, f64);
+            PRESSURE_LERP_UOM(sample, fp, snd, fp, i, dp, run, SondeCelsius);
+
+            SondeUVMps w0 = snd->uv_wind[i + 0];
+            SondeUVMps w1 = snd->uv_wind[i + 1];
+            f64 rise_u = w1.u - w0.u;
+            f64 rise_v = w1.v - w0.v;
+            SondeUVMps w_uv = (SondeUVMps){ .u = rise_u / run * dp + w0.u, .v = rise_v / run * dp + w0.v };
+            sample.uv_wind = w_uv;
+
+            SondeSpdDirKts w = sonde_uv_to_spd_dir(w_uv);
+            sample.wind = w;
+
+            break;
+        }
+    }
+
+    return sample;
 }
 

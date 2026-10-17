@@ -240,7 +240,7 @@ typedef _Atomic i32 CoyAtomicI32;
 
 static inline void coy_atomic_i32_init(CoyAtomicI32 *obj, i32 value);
 static inline i32 coy_atomic_i32_load(CoyAtomicI32 const *obj);
-static inline void coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value);
+static inline void coy_atomic_i32_store(CoyAtomicI32 *obj, i32 value);
 static inline i32 coy_atomic_i32_fetch_add(CoyAtomicI32 *obj, i32 value);
 static inline i32 coy_atomic_i32_fetch_sub(CoyAtomicI32 *obj, i32 value);
 
@@ -318,19 +318,18 @@ static inline void coy_task_thread_destroy(CoyTaskThread *thread);
  * A pool of worker threads that can take an arbitrary function and it's data (arguments) for each call.
  */
 
-typedef enum 
-{ 
-    COY_FUTURE_STATE_ERROR,     /* Initialization is an error! If zero initialized.                                        */
-    COY_FUTURE_STATE_CREATED,   /* Created but not yet submitted.                                                          */
-    COY_FUTURE_STATE_PENDING,   /* It's been added to the queue, but not started.                                          */
-    COY_FUTURE_STATE_RUNNING,   /* It's currently running.                                                                 */
-    COY_FUTURE_STATE_COMPLETE,  /* The task is done and ready to consume.                                                  */
-    COY_FUTURE_STATE_CONSUMED   /* Let the client mark that they have consumed the result; the future is no longer needed. */
-} CoyTaskState;
+#define COY_FUTURE_STATE_ERROR    0 /* Initialization is an error! If zero initialized.                                        */
+#define COY_FUTURE_STATE_CREATED  1 /* Created but not yet submitted.                                                          */
+#define COY_FUTURE_STATE_PENDING  2 /* It's been added to the queue, but not started.                                          */
+#define COY_FUTURE_STATE_RUNNING  3 /* It's currently running.                                                                 */
+#define COY_FUTURE_STATE_COMPLETE 4 /* The task is done and ready to consume.                                                  */
+#define COY_FUTURE_STATE_CONSUMED 5 /* Let the client mark that they have consumed the result; the future is no longer needed. */
+
+typedef CoyAtomicI32 CoyTaskState;
 
 typedef struct
 {
-    volatile CoyTaskState state;
+    CoyTaskState state;
     CoyThreadFunc function;
     void *future_data;                /* function arguments and return values go in here. */
 } CoyFuture;
@@ -355,13 +354,15 @@ static inline void coy_threadpool_submit(CoyThreadPool *pool, CoyFuture *fut);
 
 typedef struct
 {
+    CoyThreadPool *pool;
     CoyAtomicI32 pending;
     CoyMutex mutex;
     CoyCondVar cond;
 } CoyBatchCompletion;
 
-static inline void coy_batch_completion_init(CoyBatchCompletion *bc, i32 num_tasks);
+static inline void coy_batch_completion_init(CoyBatchCompletion *bc, CoyThreadPool *pool);
 static inline void coy_batch_completion_destroy(CoyBatchCompletion *bc);
+static inline void coy_batch_completion_task_submit(CoyBatchCompletion *bc, CoyFuture *fut);
 static inline void coy_batch_completion_task_done(CoyBatchCompletion *bc); /* Called in worker thread when task complete. */
 static inline void coy_batch_completion_wait(CoyBatchCompletion *bc);      /* Called in thread waiting for tasks.         */
 
@@ -1180,32 +1181,34 @@ ERR_RETURN:
 static inline CoyFuture 
 coy_future_create(CoyThreadFunc function, void *future_data)
 {
-    CoyFuture fut = { .state = COY_FUTURE_STATE_CREATED, .function = function, .future_data = future_data };
+    CoyFuture fut = { .function = function, .future_data = future_data };
+    coy_atomic_i32_init(&fut.state, COY_FUTURE_STATE_CREATED);
+
     return fut;
 }
 
 static inline CoyTaskState 
 coy_future_get_task_state(CoyFuture *fut)
 {
-    return fut->state;
+    return coy_atomic_i32_load(&fut->state);
 }
 
 static inline b32 
 coy_future_is_complete(CoyFuture *fut)
 {
-    return fut->state == COY_FUTURE_STATE_COMPLETE;
+    return coy_atomic_i32_load(&fut->state) == COY_FUTURE_STATE_COMPLETE;
 }
 
 static inline void coy_future_mark_consumed(CoyFuture *fut)
 {
-    Assert(fut->state == COY_FUTURE_STATE_COMPLETE);
-    fut->state = COY_FUTURE_STATE_CONSUMED;
+    Assert(coy_atomic_i32_load(&fut->state) == COY_FUTURE_STATE_COMPLETE);
+    coy_atomic_i32_store(&fut->state, COY_FUTURE_STATE_CONSUMED);
 }
 
 static inline b32 
 coy_future_is_consumed(CoyFuture *fut)
 {
-    return fut->state == COY_FUTURE_STATE_CONSUMED;
+    return coy_atomic_i32_load(&fut->state) == COY_FUTURE_STATE_CONSUMED;
 }
 
 static inline void 
@@ -1218,12 +1221,10 @@ coy_thread_pool_executor_internal(void *input_channel)
     while(coy_channel_receive(tasks, &void_task))
     {
         CoyFuture *fut = void_task;
-        Assert(fut->state == COY_FUTURE_STATE_PENDING);
-        fut->state = COY_FUTURE_STATE_RUNNING;
-        _mm_mfence();
+        Assert(coy_atomic_i32_load(&fut->state) == COY_FUTURE_STATE_PENDING);
+        coy_atomic_i32_store(&fut->state, COY_FUTURE_STATE_RUNNING);
         fut->function(fut->future_data);
-        _mm_mfence();
-        fut->state = COY_FUTURE_STATE_COMPLETE;
+        coy_atomic_i32_store(&fut->state, COY_FUTURE_STATE_COMPLETE);
     }
 
     coy_channel_done_receiving(tasks);
@@ -1262,16 +1263,17 @@ coy_threadpool_destroy(CoyThreadPool *pool)
 static inline void 
 coy_threadpool_submit(CoyThreadPool *pool, CoyFuture *fut)
 {
-    fut->state = COY_FUTURE_STATE_PENDING;
+    coy_atomic_i32_store(&fut->state, COY_FUTURE_STATE_PENDING);
     coy_channel_send(&pool->queue, fut);
 }
 
 static inline void 
-coy_batch_completion_init(CoyBatchCompletion *bc, i32 num_tasks)
+coy_batch_completion_init(CoyBatchCompletion *bc, CoyThreadPool *pool)
 {
-    coy_atomic_i32_init(&bc->pending, num_tasks);
+    coy_atomic_i32_init(&bc->pending, 0);
     bc->mutex = coy_mutex_create();
     bc->cond = coy_condvar_create();
+    bc->pool = pool;
 }
 
 static inline void 
@@ -1282,11 +1284,19 @@ coy_batch_completion_destroy(CoyBatchCompletion *bc)
 }
 
 static inline void 
+coy_batch_completion_task_submit(CoyBatchCompletion *bc, CoyFuture *fut)
+{
+    i32 prev = coy_atomic_i32_fetch_add(&bc->pending, 1);
+    Assert(prev >= 0);
+    coy_threadpool_submit(bc->pool, fut);
+}
+
+static inline void 
 coy_batch_completion_task_done(CoyBatchCompletion *bc)
 {
     i32 prev = coy_atomic_i32_fetch_sub(&bc->pending, 1);
 
-    if(prev == 1) /* This was the last one, counter is now at zero so signal main thread. */
+    if(prev <= 1) /* This was the last one, counter is now at zero so signal main thread. */
     {
         coy_mutex_lock(&bc->mutex);
         coy_condvar_wake(&bc->cond);
@@ -2069,7 +2079,7 @@ coy_atomic_i32_load(CoyAtomicI32 const *obj)
 }
 
 static inline void 
-coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value)
+coy_atomic_i32_store(CoyAtomicI32 *obj, i32 value)
 {
     InterlockedExchange((LONG*)obj, value);
 }
@@ -2960,7 +2970,7 @@ coy_atomic_i32_load(CoyAtomicI32 const *obj)
 }
 
 static inline void 
-coy_atomic_i32_store(CoyAtomicI32 const *obj, i32 value)
+coy_atomic_i32_store(CoyAtomicI32 *obj, i32 value)
 {
     atomic_store(obj, value);
 }
