@@ -198,6 +198,8 @@ load_bufkit_file_callback(void *userdata, char const * const *filelist, i32 filt
             curr = curr->next;
         }
     }
+
+    app->needs_redraw = true;
 }
 
 /* --------------------------------------------------- SDL3 Callbacks ---------------------------------------------------- */
@@ -308,6 +310,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
      */
 
     AppState *app = appstate;
+    app->needs_redraw = true; /* On every event we need a redraw. */
 
     SDL_ConvertEventToRenderCoordinates(app->renderer, event);
 
@@ -484,6 +487,9 @@ SDL_AppIterate(void *appstate)
 
     f32 frame_rate = 1000000000.0f / (f32)(start_time - app->last_frame);
     app->last_frame = start_time;
+
+    if(!app->needs_redraw) { return SDL_APP_CONTINUE; }
+    app->needs_redraw = false;
 
     /* Required for Nuklear to handle deltas correctly. */
     nk_input_end(ctx);

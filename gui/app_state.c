@@ -22,6 +22,7 @@ typedef struct
     i32 window_width, window_height; /* Fore detecting resizes. SDL_AppEvent and SDL_AppIterate are out of sync on sizes. */
     MagAllocator scratch_alloc;
     MagAllocator data_alloc;
+    b32 needs_redraw;
 
     /* Sounding data - actual data */
     SondeSounding **sndgs;
@@ -78,6 +79,7 @@ app_state_initialize(
     app->ctx = ctx;
     app->scratch_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
     app->data_alloc = mag_allocator_dyn_arena_create(ECO_MiB(2));
+    app->needs_redraw = true;
 
     app->last_frame = 0;
     app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
