@@ -12,6 +12,7 @@
 /* --------------------------------------------------------- API --------------------------------------------------------- */
 static inline b32 sounding_initialize_static_data(AppState *app);
 static inline b32 sounding_draw(AppState *app);
+static inline void sounding_sample(AppState *app, SDL_FPoint loc);
 
 /* ----------------------------------------------- Isopleth Configuration ------------------------------------------------ */
 
@@ -719,6 +720,7 @@ sounding_draw_wind_draw_barb(AppState *app, WindBarb b, MagAllocator alloc_)
 
     return success;
 }
+#undef N_BARB_SLOTS
 
 static inline b32
 sounding_draw_wind(AppState *app, MagAllocator alloc_)
@@ -764,7 +766,6 @@ sounding_draw(AppState *app)
 {
     ChartPanel *cp = &app->skewt;
     MagAllocator alloc_ = app->scratch_alloc;
-    //MagAllocator *alloc = &alloc_;
 
     b32 success = true;
 
@@ -785,6 +786,35 @@ sounding_draw(AppState *app)
     /* Reset the clipping rect and return. */
     SDL_SetRenderClipRect(app->renderer, NULL);
     return success;
+}
+
+static inline void 
+sounding_sample(AppState *app, SDL_FPoint loc)
+{
+    ChartPanel *cp = &app->skewt;
+
+    loc = chart_panel_convert_from_screen_coords(loc, cp);
+    loc = chart_panel_unapply_pan_and_zoom(loc, cp);
+
+    SondeHectopascal p = {0};
+    SondeCelsius t = {0};
+
+    chart_coords_to_pressure_hpa_temperature_c(loc, cp, &p, &t);
+
+    if(app->sndgs && app->sndgs[app->current_sndg])
+    {
+        SondeSounding *snd = app->sndgs[app->current_sndg];
+
+        SondeSoundingRow sample = sonde_sounding_sample_at_pressure(snd, p);
+
+        if(sample.p.val != 0.0)
+        {
+            app->sample.type = SAMPLE_TYPE_SKEWT;
+            app->sample.row = sample;
+        }
+        else { app->sample.type = SAMPLE_TYPE_NONE; }
+    }
+    else { app->sample.type = SAMPLE_TYPE_NONE; }
 }
 
 #undef P_MAX

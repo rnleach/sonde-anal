@@ -1,6 +1,13 @@
 /* This file includes code for managing the application state. There is no attempt at encapsulation for AppState.          */
 
 /* --------------------------------------------------------- API --------------------------------------------------------- */
+typedef enum { SAMPLE_TYPE_NONE = 0, SAMPLE_TYPE_SKEWT } SampleType;
+typedef struct
+{
+    SampleType type;
+    SondeSoundingRow row;
+} SampleInfo;
+
 typedef struct
 {
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
@@ -25,6 +32,9 @@ typedef struct
     ChartPanel skewt;
     SDL_Point context_menu_location;
     b32 show_skew_t_context_menu;
+
+    /* Sampling Info */
+    SampleInfo sample;
 
     /* Useful UI state for things like panning */
     SDL_FPoint mouse_loc;

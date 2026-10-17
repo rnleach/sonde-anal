@@ -390,13 +390,26 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
         case SDL_EVENT_KEY_DOWN:
             {
                 if(event->key.key == SDLK_ESCAPE) { return SDL_APP_SUCCESS; }
-                if(event->key.key == SDLK_F1) { app->show_debug = !app->show_debug; }
-                if(event->key.key == SDLK_RIGHT) { app->current_sndg = (app->current_sndg + 1) % app->n_soundings; }
+                if(event->key.key == SDLK_F1)     { app->show_debug = !app->show_debug; }
+
+                if(event->key.key == SDLK_RIGHT)
+                {
+                    app->current_sndg = (app->current_sndg + 1) % app->n_soundings; 
+
+                    SDL_FPoint locf = app->mouse_loc;
+                    SDL_Point loc = { .x = (i32)locf.x, .y = (i32)locf.y };
+                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
+                }
+
                 if(event->key.key == SDLK_LEFT)
                 {
-                    app->current_sndg -= 1;
-                    app->current_sndg = app->current_sndg < 0 ? app->n_soundings - 1 : app->current_sndg;
+                    app->current_sndg = (app->current_sndg + app->n_soundings - 1) % app->n_soundings; 
+
+                    SDL_FPoint locf = app->mouse_loc;
+                    SDL_Point loc = { .x = (i32)locf.x, .y = (i32)locf.y };
+                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
                 }
+
             } break;
 
         case SDL_EVENT_MOUSE_MOTION:
@@ -404,9 +417,15 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
                 SDL_Point loc = { .x = (i32)event->motion.x, .y = (i32)event->motion.y };
                 SDL_FPoint locf = { .x = event->motion.x, .y = event->motion.y };
 
-                if( event->motion.state == SDL_BUTTON_LEFT && SDL_PointInRect(&loc, &app->skewt.area))
+                if(event->motion.state == SDL_BUTTON_LEFT)
                 {
-                    chart_panel_pan(&app->skewt, app->mouse_loc, locf);
+                    if(SDL_PointInRect(&loc, &app->skewt.area)) { chart_panel_pan(&app->skewt, app->mouse_loc, locf); }
+                    /* TODO: Add other panels here as needed. */
+                }
+                else if(event->motion.state == 0)
+                {
+                    if(SDL_PointInRect(&loc, &app->skewt.clipping)) { sounding_sample(app, locf); }
+                    /* TODO: Add other panels here as needed. */
                 }
 
                 app->mouse_loc = locf;
@@ -613,6 +632,21 @@ SDL_AppIterate(void *appstate)
             nk_labelf(ctx, NK_TEXT_LEFT, "  frame time: %.2f ms [%.1f FPS]", app->frame_time, 1000.0f / app->frame_time);
             nk_labelf(ctx, NK_TEXT_LEFT, " n_soundings: %d", app->n_soundings);
             nk_labelf(ctx, NK_TEXT_LEFT, "current_sndg: %d", app->current_sndg);
+            nk_labelf(ctx, NK_TEXT_LEFT, "          p: %.2lf hPa", app->sample.row.p.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "          t: %.2lf °C", app->sample.row.t.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "         dp: %.2lf °C", app->sample.row.dp.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "         wb: %.2lf °C", app->sample.row.wb.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "         vt: %.2lf °C", app->sample.row.vt.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "      theta: %.2lf K", app->sample.row.theta.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "    theta_e: %.2lf K", app->sample.row.theta_e.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "        pvv: %.2lf hPa/s", app->sample.row.pvv.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "        hgt: %.2lf m", app->sample.row.hgt.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "         cf: %.2lf %%", app->sample.row.cloud_fraction * 100.0);
+            nk_labelf(ctx, NK_TEXT_LEFT, "         rh: %.2lf %%", app->sample.row.rh * 100.0);
+            nk_labelf(ctx, NK_TEXT_LEFT, "     rh ice: %.2lf %%", app->sample.row.rh_ice * 100.0);
+            nk_labelf(ctx, NK_TEXT_LEFT, "frost point: %.2lf °C", app->sample.row.fp.val);
+            nk_labelf(ctx, NK_TEXT_LEFT, "    UV Wind: (%.2lf, %.2lf) mps", app->sample.row.uv_wind.u, app->sample.row.uv_wind.v);
+            nk_labelf(ctx, NK_TEXT_LEFT, "       Wind: %.0lf @ %.2lf kts", app->sample.row.wind.dir, app->sample.row.wind.spd);
         }
         nk_end(ctx);
     }
