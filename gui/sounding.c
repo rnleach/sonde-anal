@@ -100,7 +100,7 @@ static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b
 /* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
 static f32 const sample_bar_width = 2.0f;
 
-static SDL_FColor const sample_bar_color  = { .r = 0.9f,      .g = 0.2f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const sample_bar_color  = { .r = 0.95f,     .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const black             = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
@@ -805,16 +805,46 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         {
             snprintf(t_str, sizeof(t_str), "%.0lf°C / ----°C  [%.0lf°F / ----°F]", t_c.val, t_f.val); 
         }
-
-        TTF_Text *t_txt = TTF_CreateText(app->text_engine, app->large_font, t_str, 0);
+        TTF_Text *t_txt = TTF_CreateText(app->text_engine, app->small_font, t_str, 0);
         TTF_SetTextColorFloat(t_txt, black.r, black.g, black.b, black.a);
         TTF_GetTextSize(t_txt, &tw, &th);
         SDL_FPoint t_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
         sample_lr.y += (f32)th;
         sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
-
         sample_lr.y += padding;
 
+        /* Humidities Line. */
+        char rh_str[64] = {0};
+        f64 rh = app->sample.row.rh * 100.0f;
+        f64 rh_ice = app->sample.row.rh_ice * 100.0f;
+        if(!isnan(rh) && isnan(rh_ice)) { snprintf(rh_str, sizeof(rh_str), "RH: %.0lf%%", rh); }
+        else if(!isnan(rh) && !isnan(rh_ice)) { snprintf(rh_str, sizeof(rh_str), "RH: %.0lf%% ICE: %.0lf%%", rh, rh_ice); }
+        else { snprintf(rh_str, sizeof(rh_str), "RH: ---%%"); }
+        TTF_Text *rh_txt = TTF_CreateText(app->text_engine, app->small_font, rh_str, 0);
+        TTF_SetTextColorFloat(rh_txt, black.r, black.g, black.b, black.a);
+        TTF_GetTextSize(rh_txt, &tw, &th);
+        SDL_FPoint rh_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        sample_lr.y += (f32)th;
+        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
+        sample_lr.y += padding;
+
+        /* Wind Line. */
+        char wind_str[32] = {0};
+        SondeSpdDirKts wind = app->sample.row.wind;
+        SondeMph spd_mph = sonde_knots_to_mph((SondeKts) { .val = wind.spd} );
+        if(!isnan(wind.spd) && !isnan(wind.dir))
+        {
+            snprintf(wind_str, sizeof(wind_str), "%03.0lf %.0lf kts / %.0lf mph", wind.dir, wind.spd, spd_mph.val);
+        }
+        TTF_Text *wind_txt = TTF_CreateText(app->text_engine, app->small_font, wind_str, 0);
+        TTF_SetTextColorFloat(wind_txt, black.r, black.g, black.b, black.a);
+        TTF_GetTextSize(wind_txt, &tw, &th);
+        SDL_FPoint wind_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        sample_lr.y += (f32)th;
+        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
+        sample_lr.y += padding;
+
+        /* Set up the sample readout box */
         SDL_FPoint border[4] = {0};
         border[0] = sample_ul;
         border[1] = (SDL_FPoint){ .x = sample_ul.x, .y = sample_lr.y };
@@ -822,10 +852,14 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         border[3] = (SDL_FPoint){ .x = sample_lr.x, .y = sample_ul.y };
 
         /* Make adjustments for bottom of the screen */
-        if(border[2].y > (f32)cp->area.h)
+        if(border[2].y > (f32)(cp->clipping.y + cp->clipping.h))
         {
-            f32 dy = (f32)cp->area.h - border[2].y;
+            f32 dy = (f32)cp->clipping.h - border[2].y;
+
             t_txt_start.y += dy;
+            rh_txt_start.y += dy;
+            wind_txt_start.y += dy;
+
             border[0].y += dy;
             border[1].y += dy;
             border[2].y += dy;
@@ -838,8 +872,12 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
 
         /* Draw text */
         TTF_DrawRendererText(t_txt, t_txt_start.x, t_txt_start.y);
+        TTF_DrawRendererText(rh_txt, rh_txt_start.x, rh_txt_start.y);
+        TTF_DrawRendererText(wind_txt, wind_txt_start.x, wind_txt_start.y);
 
         /* Clean up allocated text. */
+        TTF_DestroyText(wind_txt);
+        TTF_DestroyText(rh_txt);
         TTF_DestroyText(t_txt);
     }
 

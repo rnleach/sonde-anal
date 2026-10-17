@@ -110,6 +110,9 @@ SondeFeet        sonde_meters_to_feet(SondeMeter m)            { return (SondeFe
 SondeInches      sonde_centimeters_to_inches(SondeCentimeters cm) { return (SondeInches)   { .val = cm.val / 2.54 };       }
 SondeInches      sonde_millimeters_to_inches(SondeMillimeters mm) { return (SondeInches)   { .val = mm.val / 25.4 };       }
 
+/* Speed conversions. */
+SondeMph         sonde_knots_to_mph(SondeKts kts) { return (SondeMph) { .val = kts.val * 1.15078 }; }
+
 /* Vector Conversions */
 SondeSpdDirKts   sonde_uv_to_spd_dir(SondeUVMps uv);
 SondeUVMps       sonde_spd_dir_to_uv(SondeSpdDirKts sd);
