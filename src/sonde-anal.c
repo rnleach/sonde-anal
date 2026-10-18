@@ -111,7 +111,8 @@ SondeInches      sonde_centimeters_to_inches(SondeCentimeters cm) { return (Sond
 SondeInches      sonde_millimeters_to_inches(SondeMillimeters mm) { return (SondeInches)   { .val = mm.val / 25.4 };       }
 
 /* Speed conversions. */
-SondeMph         sonde_knots_to_mph(SondeKts kts) { return (SondeMph) { .val = kts.val * 1.15078 }; }
+SondeMph         sonde_knots_to_mph(SondeKts kts)              { return (SondeMph)         { .val = kts.val * 1.15078 };   }
+SondeKts         sonde_mph_to_knots(SondeMph mph)              { return (SondeKts)         { .val = mph.val / 1.15078 };   }
 
 /* Vector Conversions */
 SondeSpdDirKts   sonde_uv_to_spd_dir(SondeUVMps uv);
@@ -295,6 +296,67 @@ typedef struct
 
 static inline f64 sonde_lerp(f64 x0, f64 y0, f64 x1, f64 y1, f64 x);
 SondeSoundingRow sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p);
+
+/***************************************************************************************************************************
+ *                                              Sounding Analysis Data Structure
+ **************************************************************************************************************************/
+typedef enum SondePrecipType 
+    {
+        SONDE_PT_NONE,
+        SONDE_PT_UNKNOWN,
+        SONDE_PT_RAIN,
+        SONDE_PT_SNOW,
+        SONDE_PT_FZRA,
+        SONDE_PT_SLEET
+    };
+
+typedef
+{
+    SondeHectopascal p;
+    SondeCelsius t;
+    SondeCelsius dp;
+    SondeMeter hgt;
+} SondeLevel;
+
+typedef
+{
+    SondeHectopascal p;
+    SondeCelsius t;
+    SondeCelsius dp;
+} SondeParcel;
+
+typedef
+{
+    SondeParcel p0; /* Starting Parcel */
+    SondeLevel lcl; /* Lifting Condensation Level */
+    SondeLevel lfc; /* Level of Free Convection */
+    SondeLevel el;  /* Equilibrium Level */
+    SondeJpKg cape; /* Convective Available Potential Energy */
+    SondeJpKg cin;  /* Convective Inhibitition */
+
+    /* A profile trace. */
+    PakArrayLedger ledger;
+    SondeHectopascal *ps;
+    SondeHectopascal *ts;
+} SondeParcelAnalysis;
+
+typedef
+{
+    /* Profile Analysis. */
+    SondeInches pw;  /* Precipitable Water     */
+    SondeCelsius ct; /* Convective Temperature */
+    SondePrecipType pt_model; /* From the model physics */
+    SondePrecipType pt_nssl;
+    SondePrecipType pt_bourgouin;
+
+    /* Stability Analysis */
+    SondeParcelAnalysis surface;         /* Surface parcel.                             */
+    SondeParcelAnalysis mixed_layer;     /* 100 hPa mixed layer.                        */
+    SondeParcelAnalysis most_unstable;   /* Most unstable parcel.                       */
+    SondeParcelAnalysis effective_layer; /* Effective layer parcel.                     */
+    SondeParcelAnalysis convective;      /* Parcel that reached convective temperature. */
+
+} SondeAnalysis;
 
 /***************************************************************************************************************************
  *                                                      Implementations
