@@ -7,6 +7,7 @@ b32 DrawPointRoundAA(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL
 
 b32 DrawLineThick(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2,  f32 width, SDL_FColor color);
 b32 DrawLineThickRoundedAA(SDL_Renderer *r, SDL_FPoint p1, SDL_FPoint p2, f32 width, SDL_FColor color);
+b32 DrawLineThickDashedAA(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2, f32 width, f32 dash_length, f32 gap_length, SDL_FColor color);
 
 b32 DrawPolylineThick(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
 b32 DrawPolylineThickAA(SDL_Renderer *r, SDL_FPoint const *points, i32 count, f32 width, SDL_FColor color, MagAllocator alloc_);
@@ -401,6 +402,93 @@ DrawLineThickRoundedAA(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2, f32
     }
 
     return true;
+}
+
+/* Draws a thick, dashed straight line with smooth anti-aliased edges using SDL3 geometry. */
+b32 
+DrawLineThickDashedAA(SDL_Renderer *renderer, SDL_FPoint p1, SDL_FPoint p2, f32 width, f32 dash_length, f32 gap_length, SDL_FColor color)
+{
+    StopIf(!renderer || width <= 0.0f || dash_length <= 0.0f || gap_length < 0.0f, return false);
+
+    f32 dx = p2.x - p1.x;
+    f32 dy = p2.y - p1.y;
+    f32 total_length = sqrtf(dx * dx + dy * dy);
+
+    /* Handle zero-length lines */
+    if (total_length == 0.0f) { return DrawPointRoundAA(renderer, p1, width, color); }
+
+    f32 ux = dx / total_length;
+    f32 uy = dy / total_length;
+    f32 nx = -uy;
+    f32 ny =  ux;
+
+    f32 half_w = width * 0.5f;
+    f32 aa_fringe = 0.5f;
+    f32 core_w = (half_w > aa_fringe) ? (half_w - aa_fringe) : 0.0f;
+    f32 fade_w = half_w + aa_fringe;
+
+    SDL_FColor color_inner = color;
+    SDL_FColor color_outer = color;
+    color_outer.a = 0.0f; /* Fade to transparent at absolute edges */
+
+    f32 pattern_length = dash_length + gap_length;
+    f32 current_dist = 0.0f;
+    b32 success = true;
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    while (current_dist < total_length)
+    {
+        f32 dash_start = current_dist;
+        f32 dash_end = fminf(current_dist + dash_length, total_length);
+
+        SDL_FPoint p_s = { p1.x + ux * dash_start, p1.y + uy * dash_start };
+        SDL_FPoint p_e = { p1.x + ux * dash_end,   p1.y + uy * dash_end };
+
+        /* 8 vertices per dash segment (4 for start point, 4 for end point) */
+        SDL_Vertex vertices[8] = {0};
+
+        /* Start point vertices: Outer Left, Inner Left, Inner Right, Outer Right */
+        vertices[0].position = (SDL_FPoint){ p_s.x + nx * fade_w, p_s.y + ny * fade_w };
+        vertices[0].color = color_outer;
+        vertices[1].position = (SDL_FPoint){ p_s.x + nx * core_w, p_s.y + ny * core_w };
+        vertices[1].color = color_inner;
+        vertices[2].position = (SDL_FPoint){ p_s.x - nx * core_w, p_s.y - ny * core_w };
+        vertices[2].color = color_inner;
+        vertices[3].position = (SDL_FPoint){ p_s.x - nx * fade_w, p_s.y - ny * fade_w };
+        vertices[3].color = color_outer;
+
+        /* End point vertices: Outer Left, Inner Left, Inner Right, Outer Right */
+        vertices[4].position = (SDL_FPoint){ p_e.x + nx * fade_w, p_e.y + ny * fade_w };
+        vertices[4].color = color_outer;
+        vertices[5].position = (SDL_FPoint){ p_e.x + nx * core_w, p_e.y + ny * core_w };
+        vertices[5].color = color_inner;
+        vertices[6].position = (SDL_FPoint){ p_e.x - nx * core_w, p_e.y - ny * core_w };
+        vertices[6].color = color_inner;
+        vertices[7].position = (SDL_FPoint){ p_e.x - nx * fade_w, p_e.y - ny * fade_w };
+        vertices[7].color = color_outer;
+
+        /* Index ribbon connecting the left fringe, solid core, and right fringe quads */
+        i32 const indices[18] =
+            {
+                /* Left Fringe Quad */
+                0, 1, 5,  0, 5, 4,
+                /* Solid Core Quad */
+                1, 2, 6,  1, 6, 5,
+                /* Right Fringe Quad */
+                2, 3, 7,  2, 7, 6
+            };
+
+        if (!SDL_RenderGeometry(renderer, NULL, vertices, 8, indices, 18))
+        {
+            success = false;
+            break;
+        }
+
+        current_dist += pattern_length;
+    }
+
+    return success;
 }
 
 /* Draws a thick, anti-aliased polyline with mitered joints using SDL3 geometry. */

@@ -12,21 +12,22 @@
  **************************************************************************************************************************/
 typedef enum
 {
-    SONDE_ERROR_NONE = 0,              /* This is just a NaN with no embedded error information.                      */
+    SONDE_ERROR_NONE = 0,              /* This is just a NaN with no embedded error information.                         */
 
     /* Data Errors */
-    SONDE_ERROR_MISSING_DATA,          /* This represents missing data.                                               */
-    SONDE_ERROR_INVALID_INPUT,         /* An input value was invalid, such as infinity or NaN, or scientific error.   */
+    SONDE_ERROR_MISSING_DATA,          /* This represents missing data.                                                  */
+    SONDE_ERROR_INVALID_INPUT,         /* An input value was invalid, such as infinity or NaN, or scientific error.      */
 
     /* Algorithmic Errors */
-    SONDE_ERROR_TOO_MANY_ITERATIONS,   /* An iterative algorithm took too many iterations.                            */
-    SONDE_ERROR_OUT_OF_RANGE,          /* An input or output was out of the range of allowed values for an algorithm. */
-    SONDE_ERROR_NOT_ENOUGH_DATA,       /* Not enough data for the algorithm to work.                                  */
+    SONDE_ERROR_TOO_MANY_ITERATIONS,   /* An iterative algorithm took too many iterations.                               */
+    SONDE_ERROR_OUT_OF_RANGE,          /* An input or output was out of the range of allowed values for an algorithm.    */
+    SONDE_ERROR_NOT_ENOUGH_DATA,       /* Not enough data for the algorithm to work.                                     */
+    SONDE_ERROR_NO_BRACKET,            /* Some algorithms require finding a root, and that requires bracketing the root. */
 
     /* Misuse of the error system. */
-    SONDE_ERROR_NOT_AN_ERROR,          /* This isn't a NaN.                                                           */
+    SONDE_ERROR_NOT_AN_ERROR,          /* This isn't a NaN.                                                              */
 
-    SONDE_ERROR_NUMBER_OF_ERRORS       /* Not actually used for any errors, but potentially for compile time checks.  */
+    SONDE_ERROR_NUMBER_OF_ERRORS       /* Not actually used for any errors, but potentially for compile time checks.     */
 } SondeError;
 
 f64 sonde_error_create_nan(SondeError err);
@@ -308,9 +309,9 @@ typedef enum SondePrecipType
         SONDE_PT_SNOW,
         SONDE_PT_FZRA,
         SONDE_PT_SLEET
-    };
+    } SondePrecipType;
 
-typedef
+typedef struct
 {
     SondeHectopascal p;
     SondeCelsius t;
@@ -318,14 +319,14 @@ typedef
     SondeMeter hgt;
 } SondeLevel;
 
-typedef
+typedef struct
 {
     SondeHectopascal p;
     SondeCelsius t;
     SondeCelsius dp;
 } SondeParcel;
 
-typedef
+typedef struct
 {
     SondeParcel p0; /* Starting Parcel */
     SondeLevel lcl; /* Lifting Condensation Level */
@@ -340,7 +341,7 @@ typedef
     SondeHectopascal *ts;
 } SondeParcelAnalysis;
 
-typedef
+typedef struct
 {
     /* Profile Analysis. */
     SondeInches pw;  /* Precipitable Water     */
@@ -402,6 +403,7 @@ sonde_error_msg_from_code(SondeError err)
         case SONDE_ERROR_TOO_MANY_ITERATIONS: return "Too many iterations";
         case SONDE_ERROR_OUT_OF_RANGE:        return "Value out of range";
         case SONDE_ERROR_NOT_ENOUGH_DATA:     return "Not enough data";
+        case SONDE_ERROR_NO_BRACKET:          return "Root not bracketed";
         case SONDE_ERROR_NOT_AN_ERROR:        return "Value was not an error";
     }
 
@@ -463,11 +465,25 @@ sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
     f64 fa = f(a, params);
     f64 fb = f(b, params);
 
+#if 0
+    /* TODO: DELETE ME */
+    if(isnan(fa) || isnan(fb))
+    {
+        printf("a: %lf fa: %lf b: %lf fb: %lf Errors:[%s, %s]\n", a, fa, b, fb,
+                sonde_error_msg_from_value(fa), sonde_error_msg_from_value(fb)); 
+    }
+#endif
+
     if(isnan(fa)) { return fa; }
     if(isnan(fb)) { return fb; }
 
     /* Check to make sure a root is bracketed by a and b */
-    if(fa * fb >= 0.0) { return sonde_error_create_nan(SONDE_ERROR_INVALID_INPUT); }
+#if 0
+    /* TODO: DELETE ME */
+    if(fa * fb >= 0.0) { printf("a: %lf fa: %lf b: %lf fb: %lf\n", a, fa, b, fb); }
+#endif
+
+    if(fa * fb >= 0.0) { return sonde_error_create_nan(SONDE_ERROR_NO_BRACKET); }
 
     /* Check if the left and right brackets are in the correct order and fix them if not. */
     if(fabs(fa) < fabs(fb))
@@ -515,7 +531,15 @@ sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
             mflag = false;
         }
 
-        f64 fs = f(s, params); if(isnan(fs)) { return fs; }
+        f64 fs = f(s, params);
+        
+#if 0
+        /* TODO: DELETE ME */
+        if(isnan(fs)) { printf("s: %lf fs: %lf a: %lf b: %lf Error:%s\n", s, fs, a, b, sonde_error_msg_from_value(fs)); }
+#endif
+
+        if(isnan(fs)) { return fs; }
+
         d = c;
         c = b;
         fc = fb;
@@ -823,6 +847,16 @@ sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_(f64 t_c, 
     SondeHectopascal p = { .val = params[0] };
     SondeKelvin theta_e = { .val = params[1] };
     SondeKelvin theta_e_calc = sonde_equivalent_potential_temperature(t, t, p);
+
+#if 0
+    /* TODO: DELETE ME */
+    if(isnan(theta_e_calc.val))
+    {
+        printf("p: %lf theta_e: %lf t: %lf theta_e_calc: %lf Error:%s\n",
+                p.val, theta_e.val, t.val, theta_e_calc.val, sonde_error_msg_from_value(theta_e_calc.val)); 
+    }
+#endif
+
     return theta_e_calc.val - theta_e.val;
 }
 
@@ -847,6 +881,14 @@ sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, Son
             SONDE_MIN_T_VP_LIQUID_C,
             max_t,
             params);
+#if 0
+    /* TODO: DELETE */
+    if(isnan(t_c))
+    {
+        printf("p: %lf theta_e: %lf t_c: %lf Error:%s\n",
+                p.val, theta_e.val, t_c, sonde_error_msg_from_value(t_c)); 
+    }
+#endif
 
     return (SondeCelsius){ .val = t_c };
 }

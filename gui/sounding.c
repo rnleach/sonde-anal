@@ -16,12 +16,12 @@ static inline void sounding_sample(AppState *app, SDL_FPoint loc);
 
 /* ----------------------------------------------- Isopleth Configuration ------------------------------------------------ */
 
-static f32 const isobar_width         = 0.5f;
-static f32 const isotherm_width       = 0.5f;
+static f32 const isobar_width         = 1.0f;
+static f32 const isotherm_width       = 1.0f;
 static f32 const freezing_level_width = 2.5f;
-static f32 const isentrop_width       = 0.5f;
-static f32 const iso_theta_e_width    = 0.5f;
-static f32 const isohume_width        = 0.2f;
+static f32 const isentrop_width       = 1.0f;
+static f32 const iso_theta_e_width    = 1.0f;
+static f32 const isohume_width        = 1.0f;
 
 static SDL_FColor const isobar_color                = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
 static SDL_FColor const isotherm_color              = { .r = 0.862745f, .g = 0.388235f, .b = 0.156863f, .a = 1.00f };
@@ -40,7 +40,7 @@ typedef struct
 } SDL_FPoint_Pair;
 
 /* Isobars configuration */
-static f32 const isobars[] = {1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f }; /* hPa */
+static f32 const isobars[] = {1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f, }; /* hPa */
 static SDL_FPoint isobars_sdl[ECO_ARRAY_SIZE(isobars)] = {0};
 static TTF_Text *isobar_labels[ECO_ARRAY_SIZE(isobars)] = {0};
 
@@ -49,7 +49,7 @@ static f32 const isotherms[] = /* °C */
     {
           -150.0f, -140.0f, -130.0f, -120.0f, -110.0f, -100.0f, -90.0f, -80.0f, -70.0f, -60.0f, -50.0f,
            -40.0f,  -30.0f,  -20.0f,  -10.0f,    0.0f,    5.0f,  10.0f,  15.0f,  20.0f,  25.0f,  30.0f,
-            35.0f,   40.0f,   45.0f,   50.0f
+            35.0f,   40.0f,   45.0f,   50.0f,
     };
 
 static SDL_FPoint_Pair isotherms_sdl[ECO_ARRAY_SIZE(isotherms)] = {0};
@@ -61,15 +61,16 @@ static TTF_Text *isotherm_labels[ECO_ARRAY_SIZE(isotherms)] = {0};
 static f32 const isentrops[] = /* Kelvin */
     {
         230.0f, 240.0f, 250.0f, 260.0f, 270.0f, 280.0f, 290.0f, 300.0f, 310.0f,
-        320.0f, 330.0f, 340.0f, 350.0f, 360.0f, 370.0f, 380.0f, 390.0f
+        320.0f, 330.0f, 340.0f, 350.0f, 360.0f, 370.0f, 380.0f, 390.0f,
     };
 static SDL_FPoint isentrops_sdl[ECO_ARRAY_SIZE(isentrops)][N_DP] = {0};
 
 /* Iso-equivalent potential temperature (theta-e) configuration */
 static f32 const iso_theta_es[] = /* °C */
     {
-        -20.0f, -16.0f, -12.0f,  -8.0f,  -4.0f,   0.0f,   4.0f,   8.0f,  12.0f,  16.0f,  20.0f,  24.0f,  28.0f,  32.0f,
-         36.0f,  40.0f,  44.0f,  48.0f
+        -20.0f, -18.0f, -16.0f, -14.0f, -12.0f, -10.0f,  -8.0f,  -6.0f,  -4.0f,  -2.0f,   0.0f,   2.0f,   4.0f,   6.0f,
+          8.0f,  10.0f,  12.0f,  14.0f,  16.0f,  18.0f,  20.0f,  22.0f,  24.0f,  26.0f,  28.0f,  30.0f,  32.0f,  36.0f,
+         40.0f,  42.0f,  44.0f,  46.0f,  48.0f,
     };
 static SDL_FPoint iso_theta_es_sdl[ECO_ARRAY_SIZE(iso_theta_es)][N_DP] = {0};
 
@@ -77,8 +78,9 @@ static SDL_FPoint iso_theta_es_sdl[ECO_ARRAY_SIZE(iso_theta_es)][N_DP] = {0};
 /* Isohume (mixing ratio) configuration */
 static f32 const isohumes[] = /* g per kg */
     {
-          2.00f,  2.50f,  3.00f,  4.00f,  5.00f,  6.00f,  7.00f,  8.00f, 10.00f, 12.00f, 14.00f, 16.00f, 18.00f,
-         20.00f, 24.00f, 28.00f, 32.00f, 36.00f, 40.00f, 44.00f, 48.00f, 52.00f, 56.00f, 60.00f, 68.00f, 76.00f
+         0.125f,  0.25f,   0.5f,  0.75f,  1.00f,  1.50f,  2.00f,  2.50f,  3.00f,  4.00f,  5.00f,  6.00f,  7.00f,  8.00f,
+         10.00f, 12.00f, 14.00f, 16.00f, 18.00f, 20.00f, 24.00f, 28.00f, 32.00f, 36.00f, 40.00f, 44.00f, 48.00f, 52.00f,
+         56.00f, 60.00f, 68.00f, 76.00f,
     };
 static SDL_FPoint_Pair isohumes_sdl[ECO_ARRAY_SIZE(isohumes)] = {0};
 
@@ -256,14 +258,23 @@ sounding_update_static_data(ChartPanel *cp)
     }
 
     /* Calculate the screen coordinates of the iso-theta-e lines */
+    f32 const theta_e_p_min = 200.0f;
+    f32 const theta_e_dp = (P_MAX - theta_e_p_min) / (f32)(N_DP - 1);
     for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
     {
         SondeCelsius theta_e_c = { .val = iso_theta_es[i] };
-        SondeKelvin theta_e_k = sonde_celsius_to_kelvin(theta_e_c);
+        SondeKelvin theta_e_k = sonde_equivalent_potential_temperature(theta_e_c, theta_e_c, (SondeHectopascal){ .val = 1000.0 });
         for(i32 ip = 0; ip < N_DP; ++ip)
         {
-            SondeHectopascal p = { .val = P_MIN + ip * DP };
+            SondeHectopascal p = { .val = P_MAX - ip * theta_e_dp };
             SondeCelsius tc = sonde_temperature_from_equiv_pot_temp_saturated_pressure(p, theta_e_k);
+
+#if 0
+            if(isnan(tc.val))
+            {
+                SDL_Log("theta_e: %lf p: %lf tc: %lf Error: %s", theta_e_c.val, p.val, tc.val, sonde_error_msg_from_value(tc.val));
+            }
+#endif
 
             SDL_FPoint chart_point = pressure_hpa_temperature_c_to_chart_coords(p, tc, cp);
             chart_point = chart_panel_apply_pan_and_zoom(chart_point, cp);
@@ -371,7 +382,7 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
         {
             SDL_FPoint p1 = isohumes_sdl[i].p1;
             SDL_FPoint p2 = isohumes_sdl[i].p2;
-            success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isohume_width, isohume_color); Assert(success);
+            success &= DrawLineThickDashedAA(app->renderer, p1, p2, isohume_width, 15.0f, 15.0f, isohume_color); Assert(success);
         }
     }
 
