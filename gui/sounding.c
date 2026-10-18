@@ -73,6 +73,7 @@ static f32 const iso_theta_es[] = /* °C */
          40.0f,  42.0f,  44.0f,  46.0f,  48.0f,
     };
 static SDL_FPoint iso_theta_es_sdl[ECO_ARRAY_SIZE(iso_theta_es)][N_DP] = {0};
+static i32 iso_theta_es_max_pnts[ECO_ARRAY_SIZE(iso_theta_es)] = {0};
 
 
 /* Isohume (mixing ratio) configuration */
@@ -262,6 +263,7 @@ sounding_update_static_data(ChartPanel *cp)
     f32 const theta_e_dp = (P_MAX - theta_e_p_min) / (f32)(N_DP - 1);
     for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
     {
+        i32 n_pnts = 0;
         SondeCelsius theta_e_c = { .val = iso_theta_es[i] };
         SondeKelvin theta_e_k = sonde_equivalent_potential_temperature(theta_e_c, theta_e_c, (SondeHectopascal){ .val = 1000.0 });
         for(i32 ip = 0; ip < N_DP; ++ip)
@@ -269,18 +271,16 @@ sounding_update_static_data(ChartPanel *cp)
             SondeHectopascal p = { .val = P_MAX - ip * theta_e_dp };
             SondeCelsius tc = sonde_temperature_from_equiv_pot_temp_saturated_pressure(p, theta_e_k);
 
-#if 0
-            if(isnan(tc.val))
-            {
-                SDL_Log("theta_e: %lf p: %lf tc: %lf Error: %s", theta_e_c.val, p.val, tc.val, sonde_error_msg_from_value(tc.val));
-            }
-#endif
+            if(isnan(tc.val)) { break; }
+            n_pnts += 1;
 
             SDL_FPoint chart_point = pressure_hpa_temperature_c_to_chart_coords(p, tc, cp);
             chart_point = chart_panel_apply_pan_and_zoom(chart_point, cp);
             chart_point = chart_panel_convert_to_screen_coords(chart_point, cp);
             iso_theta_es_sdl[i][ip] = chart_point;
         }
+
+        iso_theta_es_max_pnts[i] = n_pnts;
     }
 
     /* Calculate the screen coordinates of the isohumes */
@@ -366,13 +366,29 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
     /* Draw the hail growth zone */
     if(app->show_hail_growth_zone)
     {
-        DrawPolygonThick(app->renderer, hail_growth_zone_points_sdl, ECO_ARRAY_SIZE(hail_growth_zone_points_sdl), 0.0f, hail_growth_zone_color, hail_growth_zone_color, alloc_);
+        success &= DrawPolygonThick(
+                app->renderer,
+                hail_growth_zone_points_sdl,
+                ECO_ARRAY_SIZE(hail_growth_zone_points_sdl),
+                0.0f,
+                hail_growth_zone_color,
+                hail_growth_zone_color,
+                alloc_);
+        Assert(success);
     }
 
     /* Draw the dendritic growth zone */
     if(app->show_dendritic_growth_zone)
     {
-        DrawPolygonThick(app->renderer, dendritic_growth_zone_points_sdl, ECO_ARRAY_SIZE(dendritic_growth_zone_points_sdl), 0.0f, dendritic_growth_zone_color, dendritic_growth_zone_color, alloc_);
+        success &= DrawPolygonThick(
+                app->renderer,
+                dendritic_growth_zone_points_sdl,
+                ECO_ARRAY_SIZE(dendritic_growth_zone_points_sdl),
+                0.0f,
+                dendritic_growth_zone_color,
+                dendritic_growth_zone_color,
+                alloc_);
+        Assert(success);
     }
 
     /* Draw the isohumes */
@@ -382,7 +398,8 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
         {
             SDL_FPoint p1 = isohumes_sdl[i].p1;
             SDL_FPoint p2 = isohumes_sdl[i].p2;
-            success &= DrawLineThickDashedAA(app->renderer, p1, p2, isohume_width, 15.0f, 15.0f, isohume_color); Assert(success);
+            success &= DrawLineThickDashedAA(app->renderer, p1, p2, isohume_width, 15.0f, 15.0f, isohume_color); 
+            Assert(success);
         }
     }
 
@@ -391,14 +408,28 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
     {
         for(i32 i = 0; i < ECO_ARRAY_SIZE(iso_theta_es); ++i)
         {
-            success &= DrawPolylineThickAA(app->renderer, &iso_theta_es_sdl[i][0], N_DP, iso_theta_e_width, iso_theta_e_color, alloc_); Assert(success);
+            success &= DrawPolylineThickAA(
+                    app->renderer,
+                    &iso_theta_es_sdl[i][0],
+                    iso_theta_es_max_pnts[i],
+                    iso_theta_e_width,
+                    iso_theta_e_color,
+                    alloc_);
+            Assert(success);
         }
     }
 
     /* Draw the isentropes. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isentrops); ++i)
     {
-        success &= DrawPolylineThickAA(app->renderer, &isentrops_sdl[i][0], N_DP, isentrop_width, isentrop_color, alloc_); Assert(success);
+        success &= DrawPolylineThickAA(
+                app->renderer,
+                &isentrops_sdl[i][0],
+                N_DP,
+                isentrop_width,
+                isentrop_color,
+                alloc_);
+        Assert(success);
     }
 
     /* Draw the isobars. */
@@ -422,17 +453,18 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
     /* ---------- Do a second pass to draw the labels on top of everything else in the background. */
 
     /* Label the isobars */
+    f32 const padding = 3.0f;
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
         SDL_FPoint p1 = {.x = cp->x_offset, .y = isobars_sdl[i].y };
 
         i32 tw, th;
         TTF_GetTextSize(isobar_labels[i], &tw, &th);
-        SDL_FRect trect = { .x = p1.x + 5.0f, .y = p1.y - (f32)(th /2), .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect = { .x = p1.x + 5.0f, .y = p1.y - (f32)(th /2) - padding, .w = (f32)(tw) + 2.0f * padding, .h = (f32)(th) + 2.0f * padding };
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect);
         SDL_SetRenderDrawColorFloat(app->renderer, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
-        TTF_DrawRendererText(isobar_labels[i], p1.x + 5.0f, p1.y - (f32)(th / 2));
+        TTF_DrawRendererText(isobar_labels[i], p1.x + 5.0f + padding, p1.y - (f32)(th / 2));
     }
 
     /* Label the isotherms. */
@@ -445,15 +477,15 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
         i32 tw, th;
         TTF_GetTextSize(isotherm_labels[i], &tw, &th);
 
-        SDL_FRect trect1 = { .x = p1.x,             .y = p1.y - (f32)(th), .w = (f32)(tw), .h = (f32)(th) };
-        SDL_FRect trect2 = { .x = p2.x - (f32)(tw), .y = p2.y,             .w = (f32)(tw), .h = (f32)(th) };
+        SDL_FRect trect1 = { .x = p1.x - padding,             .y = p1.y - (f32)(th) - padding, .w = (f32)(tw) + 2.0f * padding, .h = (f32)(th) + 2.0f * padding };
+        SDL_FRect trect2 = { .x = p2.x - (f32)(tw) - padding, .y = p2.y - padding,             .w = (f32)(tw) + 2.0f * padding, .h = (f32)(th) + 2.0f * padding };
 
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect1);
         SDL_RenderFillRect(app->renderer, &trect2);
         SDL_SetRenderDrawColorFloat(app->renderer, isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
-        TTF_DrawRendererText(isotherm_labels[i], trect1.x, trect1.y);
-        TTF_DrawRendererText(isotherm_labels[i], trect2.x, trect2.y);
+        TTF_DrawRendererText(isotherm_labels[i], trect1.x + padding, trect1.y + padding);
+        TTF_DrawRendererText(isotherm_labels[i], trect2.x + padding, trect2.y + padding);
     }
 
     return success;
