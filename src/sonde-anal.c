@@ -1426,17 +1426,17 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
 
             switch(cols[next_token_num % n_cols])
             {
-                case SBPC_PRES:    { new_sndg->p[idx]              = (SondeHectopascal)         { .val = tmp }; } break;
-                case SBPC_T:       { new_sndg->t[idx]              = (SondeCelsius)             { .val = tmp }; } break;
-                case SBPC_WB:      { new_sndg->wb[idx]             = (SondeCelsius)             { .val = tmp }; } break;
-                case SBPC_DP:      { new_sndg->dp[idx]             = (SondeCelsius)             { .val = tmp }; } break;
-                case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin)              { .val = tmp }; } break;
-                case SBPC_DRCT:    { new_sndg->wind[idx].dir       =                                     tmp;   } break;
-                case SBPC_SPD:     { new_sndg->wind[idx].spd       =                                     tmp;   } break;
-                case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp }; } break;
-                case SBPC_CLD:     { new_sndg->cloud_fraction[idx] =                                     tmp;   } break;
-                case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter)               { .val = tmp }; } break;
-                default: { /* ignore unknown values */ }                                                          break;
+                case SBPC_PRES:    { new_sndg->p[idx]              = (SondeHectopascal)         { .val = tmp };         } break;
+                case SBPC_T:       { new_sndg->t[idx]              = (SondeCelsius)             { .val = tmp };         } break;
+                case SBPC_WB:      { new_sndg->wb[idx]             = (SondeCelsius)             { .val = tmp };         } break;
+                case SBPC_DP:      { new_sndg->dp[idx]             = (SondeCelsius)             { .val = tmp };         } break;
+                case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin)              { .val = tmp };         } break;
+                case SBPC_DRCT:    { new_sndg->wind[idx].dir       =                                     tmp;           } break;
+                case SBPC_SPD:     { new_sndg->wind[idx].spd       =                                     tmp;           } break;
+                case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp * 100.0 }; } break;
+                case SBPC_CLD:     { new_sndg->cloud_fraction[idx] =                                     tmp;           } break;
+                case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter)               { .val = tmp };         } break;
+                default: { /* ignore unknown values */ }                                                                  break;
             }
 
             ++next_token_num;
@@ -1600,6 +1600,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                 }
             }
             
+            /* Reinitialize these for the next iteration. */
             sfc_pres = SondeErrorWrap(SondeHectopascal, SONDE_ERROR_MISSING_DATA);
             sfc_t = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);
             sfc_dp = SondeErrorWrap(SondeCelsius, SONDE_ERROR_MISSING_DATA);

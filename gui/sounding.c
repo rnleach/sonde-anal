@@ -99,6 +99,8 @@ static SDL_FColor const temperature_color = { .r = 0.0f,      .g = 0.0f,      .b
 static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
+static SDL_FColor const rh_color          = { .r = 0.3f,      .g = 0.6f,      .b = 0.02f,     .a = 0.75f };
+static SDL_FColor const rh_ice_color      = { .r = 0.0f,      .g = 0.6f,      .b = 0.6f,      .a = 1.50f };
 
 /* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
 static f32 const sample_bar_width = 2.0f;
@@ -825,66 +827,145 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
 
     if(do_draw_sample)
     {
+        SondeSounding *snd = app->sndgs[app->current_sndg];
+
         SDL_FPoint p1 = app->mouse_loc; p1.x = (f32)app->skewt.clipping.x;
         SDL_FPoint p2 = app->mouse_loc; p2.x = (f32)(app->skewt.clipping.x + app->skewt.clipping.w);
         success &= DrawLineThickRoundedAA(app->renderer, p1, p2, sample_bar_width, sample_bar_color); Assert(success);
 
-        f32 const padding = 6.0f;
+        f32 const padding = 4.0f;
         f32 const border_width = 3.0f;
 
         SDL_FPoint sample_ul = { .x = 10.0f, .y = p1.y };
         SDL_FPoint sample_lr = { .x = sample_ul.x + padding, .y = sample_ul.y + padding };
         i32 tw, th;
 
-        /* Temperatures Line. */
-        char t_str[64] = {0};
-        SondeCelsius t_c = app->sample.row.t; SondeFahrenheit t_f = sonde_celsius_to_fahrenheit(t_c);
-        SondeCelsius dp_c = app->sample.row.dp; SondeFahrenheit dp_f = sonde_celsius_to_fahrenheit(dp_c);
+        char str[64] = {0};
+
+        /* Temperatures, humidity, and pressure vertical velocity Line. */
+        SondeCelsius t_c = app->sample.row.t;
+        SondeCelsius dp_c = app->sample.row.dp;
+        f64 rh = app->sample.row.rh * 100.0f;
+        f64 rh_ice = app->sample.row.rh_ice * 100.0f;
+        SondeHectopascalPerSecond pvv = app->sample.row.pvv;
+
+        f32 width = 0.0f;
+        snprintf(str, sizeof(str), "%.0lf°C/", t_c.val); 
+        TTF_Text *t_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(t_txt, temperature_color.r, temperature_color.g, temperature_color.b, temperature_color.a);
+        TTF_GetTextSize(t_txt, &tw, &th);
+        SDL_FPoint t_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        width += tw;
+
         if(!isnan(dp_c.val))
         {
-            snprintf(t_str, sizeof(t_str), "%.0lf°C / %.0lf°C  [%.0lf°F / %.0lf°F]", t_c.val, dp_c.val, t_f.val, dp_f.val); 
+            snprintf(str, sizeof(str), "%.0lf°C", dp_c.val); 
         }
         else
         {
-            snprintf(t_str, sizeof(t_str), "%.0lf°C / ----°C  [%.0lf°F / ----°F]", t_c.val, t_f.val); 
+            snprintf(str, sizeof(str), "---°C "); 
         }
-        TTF_Text *t_txt = TTF_CreateText(app->text_engine, app->small_font, t_str, 0);
-        TTF_SetTextColorFloat(t_txt, black.r, black.g, black.b, black.a);
-        TTF_GetTextSize(t_txt, &tw, &th);
-        SDL_FPoint t_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
-        sample_lr.y += (f32)th;
-        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
-        sample_lr.y += padding;
+        TTF_Text *dp_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(dp_txt, dew_point_color.r, dew_point_color.g, dew_point_color.b, dew_point_color.a);
+        TTF_GetTextSize(dp_txt, &tw, &th);
+        SDL_FPoint dp_txt_start = { .x = sample_ul.x + width + padding, .y = sample_lr.y};
+        width += tw;
 
-        /* Humidities Line. */
-        char rh_str[64] = {0};
-        f64 rh = app->sample.row.rh * 100.0f;
-        f64 rh_ice = app->sample.row.rh_ice * 100.0f;
-        if(!isnan(rh) && isnan(rh_ice)) { snprintf(rh_str, sizeof(rh_str), "RH: %.0lf%%", rh); }
-        else if(!isnan(rh) && !isnan(rh_ice)) { snprintf(rh_str, sizeof(rh_str), "RH: %.0lf%% ICE: %.0lf%%", rh, rh_ice); }
-        else { snprintf(rh_str, sizeof(rh_str), "RH: ---%%"); }
-        TTF_Text *rh_txt = TTF_CreateText(app->text_engine, app->small_font, rh_str, 0);
-        TTF_SetTextColorFloat(rh_txt, black.r, black.g, black.b, black.a);
+        if(!isnan(rh))
+        {
+            snprintf(str, sizeof(str), "  %.0lf%%", rh);
+        }
+        else { str[0] = 0; }
+        TTF_Text *rh_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(rh_txt, rh_color.r, rh_color.g, rh_color.b, rh_color.a);
         TTF_GetTextSize(rh_txt, &tw, &th);
-        SDL_FPoint rh_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        SDL_FPoint rh_txt_start = { .x = sample_ul.x + width + padding, .y = sample_lr.y};
+        width += tw;
+
+        if(!isnan(rh_ice))
+        {
+            snprintf(str, sizeof(str), "/%.0lf%%", rh_ice);
+        }
+        else { str[0] = 0; }
+        TTF_Text *rh_ice_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(rh_ice_txt, rh_ice_color.r, rh_ice_color.g, rh_ice_color.b, rh_ice_color.a);
+        TTF_GetTextSize(rh_ice_txt, &tw, &th);
+        SDL_FPoint rh_ice_txt_start = { .x = sample_ul.x + width + padding, .y = sample_lr.y};
+        width += tw;
+
+        if(!isnan(pvv.val))
+        {
+            snprintf(str, sizeof(str), "  %.1lf Pa/s", pvv.val / 100.0);
+        }
+        else { str[0] = 0; }
+        TTF_Text *pvv_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(pvv_txt, black.r, black.g, black.b, black.a);
+        TTF_GetTextSize(pvv_txt, &tw, &th);
+        SDL_FPoint pvv_txt_start = { .x = sample_ul.x + width + padding, .y = sample_lr.y};
+        width += tw;
+
         sample_lr.y += (f32)th;
-        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
+        sample_lr.x = sample_ul.x + width + 2.0f * padding < sample_lr.x ? sample_lr.x : sample_ul.x + width + 2.0f * padding;
         sample_lr.y += padding;
 
-        /* Wind Line. */
-        char wind_str[32] = {0};
+        /* Pressure and wind line. */
+        width = 0.0f;
         SondeSpdDirKts wind = app->sample.row.wind;
-        SondeMph spd_mph = sonde_knots_to_mph((SondeKts) { .val = wind.spd} );
+        SondeHectopascal pres = app->sample.row.p;
+
+        snprintf(str, sizeof(str), "%.0lfhPa", pres.val);
+        TTF_Text *pres_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(pres_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
+        TTF_GetTextSize(pres_txt, &tw, &th);
+        SDL_FPoint pres_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        width += tw;
+
         if(!isnan(wind.spd) && !isnan(wind.dir))
         {
-            snprintf(wind_str, sizeof(wind_str), "%03.0lf %.0lf kts / %.0lf mph", wind.dir, wind.spd, spd_mph.val);
+            snprintf(str, sizeof(str), "  %03.0lf %.0lf kts", wind.dir, wind.spd);
         }
-        TTF_Text *wind_txt = TTF_CreateText(app->text_engine, app->small_font, wind_str, 0);
-        TTF_SetTextColorFloat(wind_txt, black.r, black.g, black.b, black.a);
+        else { str[0] = 0; }
+        TTF_Text *wind_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(wind_txt, wind_color.r, wind_color.g, wind_color.b, wind_color.a);
         TTF_GetTextSize(wind_txt, &tw, &th);
-        SDL_FPoint wind_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        SDL_FPoint wind_txt_start = { .x =sample_ul.x + width + padding, .y = sample_lr.y};
+        width += tw;
+
         sample_lr.y += (f32)th;
-        sample_lr.x = sample_ul.x + 2.0f * padding + (f32)tw < sample_lr.x ? sample_lr.x : sample_ul.x + 2.0f * padding +(f32)tw;
+        sample_lr.x = sample_ul.x + width + 2.0f * padding < sample_lr.x ? sample_lr.x : sample_ul.x + width + 2.0f * padding;
+        sample_lr.y += padding;
+
+        /* Height ASL line */
+        width = 0.0f;
+        SondeMeter hgt_asl_m = app->sample.row.hgt;
+        SondeFeet hgt_asl_ft = sonde_meters_to_feet(hgt_asl_m);
+
+        snprintf(str, sizeof(str), "ASL: %5.0lfm ( %5.0lfft )", hgt_asl_m.val, hgt_asl_ft.val);
+        TTF_Text *asl_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(asl_txt, sample_bar_color.r, sample_bar_color.g, sample_bar_color.b, sample_bar_color.a);
+        TTF_GetTextSize(asl_txt, &tw, &th);
+        SDL_FPoint asl_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        width += tw;
+
+        sample_lr.y += (f32)th;
+        sample_lr.x = sample_ul.x + width + 2.0f * padding < sample_lr.x ? sample_lr.x : sample_ul.x + width + 2.0f * padding;
+        sample_lr.y += padding;
+
+        /* Height AGL line */
+        width = 0.0f;
+        SondeMeter elevation = snd->stn_info.elevation;
+        SondeMeter hgt_agl_m = (SondeMeter){ .val = hgt_asl_m.val - elevation.val };
+        SondeFeet hgt_agl_ft = sonde_meters_to_feet(hgt_agl_m);
+
+        snprintf(str, sizeof(str), "AGL: %5.0lfm ( %5.0lfft )", hgt_agl_m.val, hgt_agl_ft.val);
+        TTF_Text *agl_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
+        TTF_SetTextColorFloat(agl_txt, sample_bar_color.r, sample_bar_color.g, sample_bar_color.b, sample_bar_color.a);
+        TTF_GetTextSize(agl_txt, &tw, &th);
+        SDL_FPoint agl_txt_start = { .x = sample_ul.x + padding, .y = sample_lr.y};
+        width += tw;
+
+        sample_lr.y += (f32)th;
+        sample_lr.x = sample_ul.x + width + 2.0f * padding < sample_lr.x ? sample_lr.x : sample_ul.x + width + 2.0f * padding;
         sample_lr.y += padding;
 
         /* Set up the sample readout box */
@@ -900,8 +981,14 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
             f32 dy = (f32)cp->clipping.h - border[2].y;
 
             t_txt_start.y += dy;
+            dp_txt_start.y += dy;
             rh_txt_start.y += dy;
+            rh_ice_txt_start.y += dy;
+            pvv_txt_start.y += dy;
+            pres_txt_start.y += dy;
             wind_txt_start.y += dy;
+            asl_txt_start.y += dy;
+            agl_txt_start.y += dy;
 
             border[0].y += dy;
             border[1].y += dy;
@@ -911,16 +998,28 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         }
 
         /* Draw box for sample. */
-        success &= DrawPolygonThick(app->renderer, border, ECO_ARRAY_SIZE(border), border_width, sample_bar_color, app->background, alloc_);
+        success &= DrawPolygonThick(app->renderer, border, ECO_ARRAY_SIZE(border), border_width, isobar_color, app->background, alloc_);
 
         /* Draw text */
         TTF_DrawRendererText(t_txt, t_txt_start.x, t_txt_start.y);
+        TTF_DrawRendererText(dp_txt, dp_txt_start.x, dp_txt_start.y);
         TTF_DrawRendererText(rh_txt, rh_txt_start.x, rh_txt_start.y);
+        TTF_DrawRendererText(rh_ice_txt, rh_ice_txt_start.x, rh_ice_txt_start.y);
+        TTF_DrawRendererText(pvv_txt, pvv_txt_start.x, pvv_txt_start.y);
+        TTF_DrawRendererText(pres_txt, pres_txt_start.x, pres_txt_start.y);
         TTF_DrawRendererText(wind_txt, wind_txt_start.x, wind_txt_start.y);
+        TTF_DrawRendererText(asl_txt, asl_txt_start.x, asl_txt_start.y);
+        TTF_DrawRendererText(agl_txt, agl_txt_start.x, agl_txt_start.y);
 
         /* Clean up allocated text. */
+        TTF_DestroyText(agl_txt);
+        TTF_DestroyText(asl_txt);
         TTF_DestroyText(wind_txt);
+        TTF_DestroyText(pres_txt);
+        TTF_DestroyText(pvv_txt);
+        TTF_DestroyText(rh_ice_txt);
         TTF_DestroyText(rh_txt);
+        TTF_DestroyText(dp_txt);
         TTF_DestroyText(t_txt);
     }
 
