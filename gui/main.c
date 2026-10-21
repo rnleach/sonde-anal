@@ -165,7 +165,7 @@ load_bufkit_file_callback(void *userdata, char const * const *filelist, i32 filt
         ElkStr f_string = eco_file_slurp_text(chosen_file_path, scratch);
 
         SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(data, f_string, fn_str);
-        sonde_sounding_list_fill_in_profiles(
+        sonde_sounding_list_fill_in_profiles( /* Does the best it can, but ignores profiles that weren't fillable. */
                 sndgs,
                 SONDE_PC_DEW_POINT
                     | SONDE_PC_WET_BULB
