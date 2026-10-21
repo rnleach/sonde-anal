@@ -12,7 +12,7 @@ bufkit_load_data_namm_test(void)
     ElkStr namm = eco_file_slurp_text(fname, alloc);
 
     SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(alloc, namm, fn_str);
-    sonde_sounding_list_fill_in_profiles(
+    u32 unfilled_columns = sonde_sounding_list_fill_in_profiles(
             sndgs,
             SONDE_PC_DEW_POINT
                 | SONDE_PC_WET_BULB
@@ -25,6 +25,8 @@ bufkit_load_data_namm_test(void)
                 | SONDE_PC_WIND_UV
                 | SONDE_PC_WIND_SPEED_DIR
         );
+
+    Assert(unfilled_columns == 0);
 
     eco_arena_destroy(alloc);
 }
@@ -40,7 +42,7 @@ bufkit_load_data_gfs_test(void)
     ElkStr gfs = eco_file_slurp_text(fname, alloc);
 
     SondeSoundingList *sndgs = sonde_sounding_from_bufkit_str(alloc, gfs, fn_str);
-    sonde_sounding_list_fill_in_profiles(
+    u32 unfilled_columns = sonde_sounding_list_fill_in_profiles(
             sndgs,
             SONDE_PC_DEW_POINT
                 | SONDE_PC_WET_BULB
@@ -53,6 +55,8 @@ bufkit_load_data_gfs_test(void)
                 | SONDE_PC_WIND_UV
                 | SONDE_PC_WIND_SPEED_DIR
         );
+
+    Assert(unfilled_columns == 0);
 
     eco_arena_destroy(alloc);
 }

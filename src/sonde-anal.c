@@ -40,7 +40,7 @@ char const *sonde_error_msg_from_value(f64 val);
 #define SondeIsError(value) sonde_is_error(value.val)
 
 /***************************************************************************************************************************
- *                                               Units of Measurement
+ *                                            Units of Measurement (UOM)
  **************************************************************************************************************************/
 /* Temperatures */
 typedef struct { f64 val; } SondeCelsius;
@@ -272,8 +272,8 @@ typedef struct SondeSoundingList
 } SondeSoundingList;
 
 SondeSoundingList *sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_description);
-void sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes);
-void sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes); 
+u32 sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes);             /* Returns profile codes of elements not able to be calculated. */
+u32 sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes);  /* Returns profile codes of elements not able to be calculated. */
 
 /* Querying */
 typedef struct
@@ -299,7 +299,65 @@ static inline f64 sonde_lerp(f64 x0, f64 y0, f64 x1, f64 y1, f64 x);
 SondeSoundingRow sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p);
 
 /***************************************************************************************************************************
- *                                              Sounding Analysis Data Structure
+ *                                              Levels, Layers, and Parcels
+ ***************************************************************************************************************************
+ * Some of these are useful on their own, but they are also very useful as building blocks for the analysis section below.
+ */
+
+typedef struct /* Similar to a SondeSoundingRow but with less data. */
+{
+    SondeHectopascal p;
+    SondeCelsius t;
+    SondeCelsius dp;
+    SondeMeter hgt;
+    SondeUVMps uv_wind;
+} SondeLevel;
+
+typedef struct
+{
+    size n_levels;
+    SondeLevel data[];
+} SondeLevels;
+
+typedef struct
+{
+    SondeLevel top;
+    SondeLevel bottom;
+} SondeLayer;
+
+typedef struct
+{
+    size n_layers;
+    SondeLayer data[];
+} SondeLayers;
+
+typedef struct
+{
+    SondeHectopascal p;
+    SondeCelsius t;
+    SondeCelsius dp;
+} SondeParcel;
+
+static inline SondeLevels *sonde_freezing_levels(SondeSounding *snd, MagAllocator *perm);
+static inline SondeLevels *sonde_wet_bulb_zero_levels(SondeSounding *snd, MagAllocator *perm);
+static inline SondeLevels *sonde_max_temperature_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm); /* Only search up to min pressure */
+static inline SondeLevels *sonde_max_wetbulb_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm);     /* Only search up to min pressure */
+static inline SondeLevels *sonde_height_level(SondeSounding *snd, SondeMeter height_asl, MagAllocator *perm);
+
+static inline SondeLayers *sonde_temperature_layer(SondeSounding *snd, SondeCelsius warm, SondeCelsius cold, MagAllocator *perm);
+static inline SondeLayers *sonde_warm_wetbulb_layer_aloft(SondeSounding *snd, MagAllocator *perm);                             /* Finds layers with wet bulb > 0.0°C that do not start at the surface. */
+static inline SondeLayers *sonde_cold_surface_layer(SondeSounding *snd, MagAllocator *perm);                                   /* Layer of temperatures <= 0.0°C from surface up to freezing.          */
+static inline SondeLayers *sonde_warm_surface_layer(SondeSounding *snd, MagAllocator *perm);                                   /* Layer of temepratures > 0.0°C from surface up to freezing level.     */
+
+static inline b32 sonde_parcel_from_sounding_row(SondeSoundingRow *row, SondeParcel *p);
+static inline b32 sonde_mixed_layer_parcel(SondeSounding *snd, SondeParcel *p);     /* Lowest 100 hPa layer - pressure weighted mean.                      */
+static inline b32 sonde_surface_parcel(SondeSounding *snd, SondeParcel *p);         /* Surface based or lowest level in the sounding.                      */
+static inline b32 sonde_most_unstable_parcel(SondeSounding *snd, SondeParcel *p);   /* Defined as the parcel below 300 hPa with highest theta-e            */
+static inline b32 sonde_convective_parcel(SondeSounding *snd, SondeParcel *p);      /* Parcel at surface with convective temperature                       */
+static inline b32 sonde_effective_layer_parcel(SondeSounding *snd, SondeParcel *p); /* Pressure weighted mean of layer with 100 J/Kg+ CAPE at every level. */
+
+/***************************************************************************************************************************
+ *                                           Sounding Analysis Data Structures
  **************************************************************************************************************************/
 typedef enum SondePrecipType 
     {
@@ -309,22 +367,7 @@ typedef enum SondePrecipType
         SONDE_PT_SNOW,
         SONDE_PT_FZRA,
         SONDE_PT_SLEET
-    } SondePrecipType;
-
-typedef struct
-{
-    SondeHectopascal p;
-    SondeCelsius t;
-    SondeCelsius dp;
-    SondeMeter hgt;
-} SondeLevel;
-
-typedef struct
-{
-    SondeHectopascal p;
-    SondeCelsius t;
-    SondeCelsius dp;
-} SondeParcel;
+    } SondePrecipType; /* TODO: Precip type analysis. */
 
 typedef struct
 {
@@ -333,19 +376,36 @@ typedef struct
     SondeLevel lfc; /* Level of Free Convection */
     SondeLevel el;  /* Equilibrium Level */
     SondeJpKg cape; /* Convective Available Potential Energy */
+    SondeJpKg hail_cape; /* Convective Available Potential Energy in the hail growth zone */
     SondeJpKg cin;  /* Convective Inhibitition */
+    f64 ncape;      /* CAPE / height of layer with CAPE > 0 */
 
     /* A profile trace. */
-    PakArrayLedger ledger;
+    PakArrayLedger prof_ldgr;
     SondeHectopascal *ps;
-    SondeHectopascal *ts;
+    SondeMeter *hgts;
+    SondeCelsius *parcel_ts;
+    SondeCelsius *env_ts;
 } SondeParcelAnalysis;
 
 typedef struct
 {
+    SondeJpKg dcape;
+    SondeCelsius downrush_t;
+
+    /* A profile trace. */
+    PakArrayLedger prof_ldgr;
+    SondeHectopascal *ps;
+    SondeMeter *hgts;
+    SondeCelsius *parcel_ts;
+    SondeCelsius *env_ts;
+} SondeDCAPEAnalysis;
+
+typedef struct
+{
     /* Profile Analysis. */
-    SondeInches pw;  /* Precipitable Water     */
-    SondeCelsius ct; /* Convective Temperature */
+    SondeInches pw;           /* Precipitable Water     */
+    SondeCelsius ct;          /* Convective Temperature */
     SondePrecipType pt_model; /* From the model physics */
     SondePrecipType pt_nssl;
     SondePrecipType pt_bourgouin;
@@ -358,6 +418,11 @@ typedef struct
     SondeParcelAnalysis convective;      /* Parcel that reached convective temperature. */
 
 } SondeAnalysis;
+
+static inline SondeMillimeters sonde_precipitable_water(SondeSounding *snd);
+static inline SondeDCAPEAnalysis sonde_downburst(SondeSounding *snd, MagAllocator *perm);
+static inline SondeParcelAnalysis sonde_lift_parcel(SondeSounding *snd, SondeParcel parcel, MagAllocator *perm);
+static inline SondeAnalysis sonde_sounding_full_analysis(SondeSounding *snd, MagAllocator *perm);
 
 /***************************************************************************************************************************
  *                                                      Implementations
@@ -1621,14 +1686,16 @@ RETURN:
     return sndgs;
 }
 
-void 
+u32
 sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
 {
     /* These profiles are always required, so turn them off, but error check first in debug mode. */
     Assert(!(pcodes & (SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_GEOPOTENTIAL_HGT)));
     pcodes &= ~(SONDE_PC_PRESSURE | SONDE_PC_TEMPERATURE | SONDE_PC_GEOPOTENTIAL_HGT);
 
-    /* These profiles are incalcuable, so for them off too, but error check first in debug mode. */
+    /* These profiles are incalcuable, so turn them off too, but error check first in debug mode. 
+     * It's a user bug to request these to be calculated, they must be provided in the original data.
+     */
     Assert(!(pcodes & (SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION)));
     pcodes &= ~(SONDE_PC_PVV | SONDE_PC_CLOUD_FRACTION);
 
@@ -1639,6 +1706,8 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
         };
 
     size const n_levels = pak_len(&snd->levels);
+
+    u32 original_codes = pcodes;
 
     while(pcodes != 0)
     {
@@ -1685,6 +1754,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_RH);
                         }
                     } break;
@@ -1711,6 +1781,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
                         }
                     } break;
@@ -1737,6 +1808,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
                         }
                     } break;
@@ -1806,6 +1878,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
                         }
                     } break;
@@ -1834,6 +1907,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_FROST_POINT);
                         }
                     } break;
@@ -1859,6 +1933,7 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                         }
                         else
                         {
+                            /* We need this, so set it so that it will be calculated if possible. */
                             pcodes = sonde_profile_code_set(pcodes, SONDE_PC_DEW_POINT);
                         }
                     } break;
@@ -1880,6 +1955,9 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                             pcodes &= ~SONDE_PC_WIND_UV;
                             snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_WIND_UV);
                         }
+                        /* No point in an else here, if neither SONDE_PC_WIND_UV or SONDE_PC_WIND_SPEED_DIR exist,thend
+                         * there's no way to calculate them!
+                         */
                     } break;
 
                     case SONDE_PC_WIND_SPEED_DIR:
@@ -1899,6 +1977,9 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
                             pcodes &= ~SONDE_PC_WIND_SPEED_DIR;
                             snd->profiles = sonde_profile_code_set(snd->profiles, SONDE_PC_WIND_SPEED_DIR);
                         }
+                        /* No point in an else here, if neither SONDE_PC_WIND_UV or SONDE_PC_WIND_SPEED_DIR exist,thend
+                         * there's no way to calculate them!
+                         */
                     } break;
                     default: { Panic(); /* unreachable */ } break;
                 }
@@ -1909,19 +1990,26 @@ sonde_sounding_fill_in_profiles(SondeSounding *snd, u32 pcodes)
         if(pcodes == prev) { break; }
     }
 
-    /* Check to make sure we got everything. */
-    Assert(pcodes == 0);
+    /* Remove codes that were added by the algorithm above, so we only have the originally requested codes that
+     * weren't calcuable left.
+     */
+    pcodes &= original_codes;
+
+    return pcodes;
 }
 
-void 
+u32 
 sonde_sounding_list_fill_in_profiles(SondeSoundingList *sndgs, u32 pcodes)
 {
+    u32 unfilled_codes = 0;
     SondeSoundingList *current = sndgs;
     while(current)
     {
-        sonde_sounding_fill_in_profiles(current->snd, pcodes);
+        unfilled_codes |= sonde_sounding_fill_in_profiles(current->snd, pcodes);
         current = current->next;
     }
+
+    return unfilled_codes;
 }
 
 static inline f64
@@ -1998,4 +2086,161 @@ sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p)
 
     return sample;
 }
+#undef PRESSURE_LERP
+
+static inline SondeLevels *
+sonde_freezing_levels(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLevels *
+sonde_wet_bulb_zero_levels(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLevels *
+sonde_max_temperature_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLevels *
+sonde_max_wetbulb_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLevels *
+sonde_height_level(SondeSounding *snd, SondeMeter height_asl, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+
+static inline SondeLayers *
+sonde_temperature_layer(SondeSounding *snd, SondeCelsius warm, SondeCelsius cold, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLayers *
+sonde_warm_wetbulb_layer_aloft(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLayers *
+sonde_cold_surface_layer(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+static inline SondeLayers *
+sonde_warm_surface_layer(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return NULL;
+}
+
+
+static inline b32 
+sonde_parcel_from_sounding_row(SondeSoundingRow *row, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+static inline b32 
+sonde_mixed_layer_parcel(SondeSounding *snd, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+static inline b32 
+sonde_surface_parcel(SondeSounding *snd, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+static inline b32 
+sonde_most_unstable_parcel(SondeSounding *snd, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+static inline b32 
+sonde_convective_parcel(SondeSounding *snd, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+static inline b32 
+sonde_effective_layer_parcel(SondeSounding *snd, SondeParcel *p)
+{
+    /* TODO: implement */
+    Assert(false);
+    return false;
+}
+
+
+static inline SondeMillimeters 
+sonde_precipitable_water(SondeSounding *snd)
+{
+    /* TODO: implement */
+    Assert(false);
+    return (SondeMillimeters){0};
+}
+
+static inline SondeDCAPEAnalysis 
+sonde_downburst(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return (SondeDCAPEAnalysis){0};
+}
+
+static inline SondeParcelAnalysis 
+sonde_lift_parcel(SondeSounding *snd, SondeParcel parcel, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return (SondeParcelAnalysis){0};
+}
+
+static inline SondeAnalysis 
+sonde_sounding_full_analysis(SondeSounding *snd, MagAllocator *perm)
+{
+    /* TODO: implement */
+    Assert(false);
+    return (SondeAnalysis){0};
+}
+
 
