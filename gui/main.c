@@ -47,6 +47,12 @@
 
 /* Specializations for each panel or drawing area. */
 #include "sounding.c"
+#include "hodo.c"
+#include "gusts.c"
+#include "fire.c"
+#include "profiles.c"
+#include "text.c"
+#include "indexes.c"
 
 /* Embedded Font */
 #include "fonts/Roboto-Bold.h"
@@ -497,6 +503,20 @@ SDL_AppIterate(void *appstate)
     i32 w, h;
     SDL_GetRenderOutputSize(app->renderer, &w, &h);
 
+    /* ======================================================================================================================
+     *                                              Some Layout For GUI Elements
+     * =================================================================================================================== */
+    f32 scale_x, scale_y;
+    SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
+    i32 logical_w = (i32)(w / scale_x);
+
+    f32 const bar_w = logical_w * 0.5;
+    f32 const bar_h = 60.0f;
+
+    /* ======================================================================================================================
+     *                                                Draw The Skew-T etc.
+     * =================================================================================================================== */
+
     /* Check for resizes. */
     if(h != app->window_height || w != app->window_width)
     {
@@ -505,7 +525,8 @@ SDL_AppIterate(void *appstate)
         app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
         /* Rescale the sounding area. */
-        chart_panel_update_for_screen_resize(&app->skewt, 0, 0, w / 2, h);
+        chart_panel_update_for_screen_resize(&app->skewt, 0, (i32)bar_h, w / 2, h - (i32)bar_h);
+        /* TODO: Don't forget to update other panels here! */
         app->window_width = w;
         app->window_height = h;
     }
@@ -517,20 +538,27 @@ SDL_AppIterate(void *appstate)
     /* Draw the sounding area. */
     b32 success = sounding_draw(app); Assert(success);
 
+    /* Draw the right panel area */
+    switch(app->current_tab)
+    {
+        case SGT_HODO:     success &= hodograph_draw(app); Assert(success); break;
+        case SGT_PROFILES: success &= profiles_draw(app); Assert(success);  break;
+        case SGT_GUSTS:    success &= gusts_draw(app); Assert(success);     break;
+        case SGT_FIRE:     success &= fire_draw(app); Assert(success);      break;
+        case SGT_INDEXES:  success &= indexes_draw(app); Assert(success);   break;
+        case SGT_TEXT:     success &= text_draw(app); Assert(success);      break;
+        default: Panic(); break; /* unreachable */
+    }
+
+
     /* ======================================================================================================================
      *                                                     Interactive UI
      * =================================================================================================================== */
     style_hud_panel(ctx);
 
-    f32 scale_x, scale_y;
-    SDL_GetRenderScale(app->renderer, &scale_x, &scale_y);
-    i32 logical_w = (i32)(w / scale_x);
-
-    f32 const bar_w = logical_w * 0.5;
-    f32 const bar_h = 60.0f;
-
+    /* Left pane - always Skew-T */
     {
-        if(nk_begin(ctx, "Actions", nk_rect(0.0f, 0.0f, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
+        if(nk_begin(ctx, "SkewTActions", nk_rect(0.0f, 0.0f, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
         {
             nk_layout_row_dynamic(ctx, 40, 5);
 
@@ -557,8 +585,22 @@ SDL_AppIterate(void *appstate)
             if(nk_button_label(ctx, "<"))  { app->current_sndg = app->current_sndg - 1 < 0 ? app->n_soundings - 1 : app->current_sndg - 1; }
             if(nk_button_label(ctx, ">"))  { app->current_sndg = (app->current_sndg + 1) % app->n_soundings; }
             if(nk_button_label(ctx, ">|")) { app->current_sndg = app->n_soundings - 1; }
+        }
+        nk_end(ctx);
+    }
 
-            /* --- Attached Popup Layout (Eliminates separate blocking window frame) --- */
+    /* Right pane - Tab list of options to view */
+    {
+        if(nk_begin(ctx, "TabSelector", nk_rect(bar_w, 0.0f, bar_w, bar_h), NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER))
+        {
+            nk_layout_row_dynamic(ctx, 40, 6);
+
+            if(nk_button_label(ctx, "Hodo"))       { app->current_tab = SGT_HODO;     }
+            if(nk_button_label(ctx, "Profiles"))   { app->current_tab = SGT_PROFILES; }
+            if(nk_button_label(ctx, "Wind Gusts")) { app->current_tab = SGT_GUSTS;    }
+            if(nk_button_label(ctx, "Fires"))      { app->current_tab = SGT_FIRE;     }
+            if(nk_button_label(ctx, "Indexes"))    { app->current_tab = SGT_INDEXES;  }
+            if(nk_button_label(ctx, "Text"))       { app->current_tab = SGT_TEXT;     }
         }
         nk_end(ctx);
     }

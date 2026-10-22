@@ -8,6 +8,8 @@ typedef struct
     SondeSoundingRow row;
 } SampleInfo;
 
+typedef enum { SGT_HODO, SGT_PROFILES, SGT_GUSTS, SGT_FIRE, SGT_INDEXES, SGT_TEXT } GuiTab;
+
 typedef struct
 {
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
@@ -33,6 +35,9 @@ typedef struct
     ChartPanel skewt;
     SDL_Point context_menu_location;
     b32 show_skew_t_context_menu;
+
+    /* Right panel Tabs */
+    GuiTab current_tab;
 
     /* Sampling Info */
     SampleInfo sample;
@@ -98,5 +103,9 @@ app_state_initialize(
     app->show_equivalent_pot_temp = false;
 
     app->show_skew_t_context_menu = false;
+
+    /* Right panel Tabs */
+    app->current_tab = SGT_TEXT;
+
 }
 

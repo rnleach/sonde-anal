@@ -64,8 +64,8 @@ chart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, f32 aspect_ratio)
 
     cp.chart_w = ars > cp.ard ? (f32)h * cp.ard : (f32)w;
     cp.chart_h = ars < cp.ard ? (f32)w / cp.ard : (f32)h;
-    cp.x_offset = ((f32)w - cp.chart_w) * 0.50f;
-    cp.y_offset = ((f32)h - cp.chart_h) * 0.50f;
+    cp.x_offset = ((f32)w - cp.chart_w) * 0.50f + ulx;
+    cp.y_offset = ((f32)h - cp.chart_h) * 0.50f + uly;
 
     cp.zf = 1.0f;
     cp.pan = (SDL_FPoint) { .x = 0.0f, .y = 0.0f };
@@ -85,8 +85,8 @@ chart_panel_update_for_screen_resize(ChartPanel *cp, i32 ulx, i32 uly, i32 w, i3
 
     cp->chart_w = ars > cp->ard ? (f32)h * cp->ard : (f32)w;
     cp->chart_h = ars < cp->ard ? (f32)w / cp->ard : (f32)h;
-    cp->x_offset = ((f32)w - cp->chart_w) * 0.50f;
-    cp->y_offset = ((f32)h - cp->chart_h) * 0.50f;
+    cp->x_offset = ((f32)w - cp->chart_w) * 0.50f + ulx;
+    cp->y_offset = ((f32)h - cp->chart_h) * 0.50f + uly;
 
     chart_panel_internal_manage_clipping(cp);
 
