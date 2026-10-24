@@ -10,6 +10,12 @@ typedef struct
 
 typedef enum { SGT_HODO, SGT_PROFILES, SGT_GUSTS, SGT_FIRE, SGT_INDEXES, SGT_TEXT } GuiTab;
 
+/* An amalgamation of all things related to a particular sounding. */
+typedef struct
+{
+    SondeSounding *sndg;
+} SoundingAmalgam;
+
 typedef struct
 {
     /* Base UI stuff for any SDL3 / Nuklear app using the Callback API. */
@@ -27,7 +33,7 @@ typedef struct
     b32 needs_redraw;
 
     /* Sounding data - actual data */
-    SondeSounding **sndgs;
+    SoundingAmalgam *sndg_amalgams;
     i32 n_soundings;
     i32 current_sndg;
 
@@ -90,7 +96,7 @@ app_state_initialize(
     app->background = (SDL_FColor){ .r = 0.95f, .g = 0.95f, .b = 0.95f, .a = 1.0f};
 
     /* Sounding data - actual data */
-    app->sndgs = NULL;
+    app->sndg_amalgams = NULL;
     app->current_sndg = -1;
 
     /* Skew-t panel state */

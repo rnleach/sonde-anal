@@ -501,9 +501,9 @@ sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
 
     b32 success = true;
 
-    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    if(app->current_sndg >= 0)
     {
-        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
         /* Draw all at once! */
         PakArrayLedger t_ledger = pak_array_ledger_create(pak_len(&snd->levels));
@@ -581,12 +581,12 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
     static char const *doy[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     b32 success = true;
 
-    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    if(app->current_sndg >= 0)
     {
         f32 const padding = 6.0f;
         f32 const border_width = 3.0f;
 
-        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
         SondeStationInfo *stn = &snd->stn_info;
 
         SDL_FPoint legend_ul = { .x = 10.0f, .y = 70.0f };
@@ -780,9 +780,9 @@ sounding_draw_wind(AppState *app, MagAllocator alloc_)
 
     b32 success = true;
 
-    if(app->current_sndg >= 0 && app->sndgs[app->current_sndg])
+    if(app->current_sndg >= 0)
     {
-        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
         f32 last_min_y = cp->clipping.y + cp->clipping.h;
 
@@ -822,12 +822,11 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         app->sample.type == SAMPLE_TYPE_SKEWT        && 
         chart_panel_point_inside(cp, app->mouse_loc) &&
         app->current_sndg >= 0                       &&
-        app->sndgs                                   &&
-        app->sndgs[app->current_sndg];
+        app->sndg_amalgams;
 
     if(do_draw_sample)
     {
-        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
         SDL_FPoint p1 = app->mouse_loc; p1.x = (f32)app->skewt.clipping.x;
         SDL_FPoint p2 = app->mouse_loc; p2.x = (f32)(app->skewt.clipping.x + app->skewt.clipping.w);
@@ -1067,9 +1066,9 @@ sounding_sample(AppState *app, SDL_FPoint loc)
 
     chart_coords_to_pressure_hpa_temperature_c(loc, cp, &p, &t);
 
-    if(app->sndgs && app->sndgs[app->current_sndg])
+    if(app->sndg_amalgams)
     {
-        SondeSounding *snd = app->sndgs[app->current_sndg];
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
         SondeSoundingRow sample = sonde_sounding_sample_at_pressure(snd, p);
 

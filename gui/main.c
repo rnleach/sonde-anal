@@ -193,14 +193,14 @@ load_bufkit_file_callback(void *userdata, char const * const *filelist, i32 filt
             curr = curr->next;
         }
 
-        app->sndgs = eco_arena_nmalloc(data, app->n_soundings, SondeSounding *);
+        app->sndg_amalgams = eco_arena_nmalloc(data, app->n_soundings, SoundingAmalgam);
         app->current_sndg = 0;
 
         curr = sndgs;
         i32 i = 0;
         while(curr)
         {
-            app->sndgs[i++] = curr->snd;
+            app->sndg_amalgams[i++].sndg = curr->snd;
             curr = curr->next;
         }
     }
