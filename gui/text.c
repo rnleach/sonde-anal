@@ -38,7 +38,7 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     --buf_remaining;
     n_lines += 1;
 
-    /* Header Row 1 - column labels*/
+    /* Header Row 2 - column labels*/
     nw = snprintf(next, buf_remaining, "%-5s", "hPa");
     next += nw;
     buf_remaining -= nw;
@@ -122,8 +122,8 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     /* Subtract 2 for the header rows */
     Assert(n_lines - 2 == pak_len(&amalgam->sndg->levels));
 
-#undef TEXT_BUF_INITIAL_CAPACITY
 #undef TEXT_BUF_GROW_AMOUNT
+#undef TEXT_BUF_INITIAL_CAPACITY
 }
 
 b32 text_draw(AppState *app)
@@ -236,7 +236,7 @@ b32 text_draw(AppState *app)
         }
         
         /* Now draw the text and delete the TTF_Text from the GPU */
-        for(size row = 0; row < n_lines; ++row)
+        for(size row = 2; row < n_lines; ++row) /* Start at 2 to skip the header rows */
         {
             TTF_Text *txt = txt_lines[row];
             TTF_SetTextColorFloat(txt, black.r, black.g, black.b, black.a);
@@ -244,6 +244,34 @@ b32 text_draw(AppState *app)
             TTF_DrawRendererText(txt, txt_start.x, txt_start.y - y_adjust);
             TTF_DestroyText(txt);
         }
+
+        /* Go back and draw the header rows */
+        SDL_FPoint pnts0[4] =  /* Cover other text if any with a solid background. */
+            {
+                (SDL_FPoint){ .x = line_start[0].x, .y = (f32)app->text_area.area.y },
+                (SDL_FPoint){ .x = line_start[0].x, .y = (f32)app->text_area.area.y + (line_start[2].y - line_start[0].y) },
+                (SDL_FPoint){ .x = line_start[0].x + (f32)app->text_area.area.w, .y = (f32)app->text_area.area.y + (line_start[2].y - line_start[0].y) },
+                (SDL_FPoint){ .x = line_start[0].x + (f32)app->text_area.area.h, .y = (f32)app->text_area.area.y },
+            };
+
+        MagAllocator scratch2 = *scratch;
+        success &= DrawPolygonThick(app->renderer, pnts0, ECO_ARRAY_SIZE(pnts0), 0.0f, app->background, app->background, scratch2);
+
+        /* Header row 1 */
+        TTF_Text *txt = txt_lines[0];
+        TTF_SetTextColorFloat(txt, black.r, black.g, black.b, black.a);
+        SDL_FPoint txt_start = line_start[0];
+        txt_start.y = (f32)app->text_area.area.y;
+        TTF_DrawRendererText(txt, txt_start.x, txt_start.y);
+        TTF_DestroyText(txt);
+
+        /* Header row 2 */
+        txt = txt_lines[1];
+        TTF_SetTextColorFloat(txt, black.r, black.g, black.b, black.a);
+        txt_start = line_start[1];
+        txt_start.y = (f32)app->text_area.area.y + (line_start[1].y - line_start[0].y);
+        TTF_DrawRendererText(txt, txt_start.x, txt_start.y);
+        TTF_DestroyText(txt);
 
         /* Restore clipping area */
         SDL_SetRenderClipRect(app->renderer, NULL);
