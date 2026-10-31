@@ -1618,7 +1618,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                 case SBPC_T:    { sfc_t.val    = tmp; } break;
                 case SBPC_DP:   { sfc_dp.val   = tmp; } break;
                 case SBPC_UW:   { sfc_u.val    = tmp; } break;
-                case SBPC_VW:   { sfc_u.val    = tmp; } break;
+                case SBPC_VW:   { sfc_v.val    = tmp; } break;
                 default: { /* ignore unknown cols */  } break;
             }
         }
@@ -1646,6 +1646,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                 {
                     SondeUVMps sfc_uvw = { .u = sfc_u.val, .v = sfc_v.val };
                     SondeSpdDirKts sfc_spd_dir = sonde_uv_to_spd_dir(sfc_uvw);
+                    current_sndg->snd->uv_wind[0] = sfc_uvw;
                     current_sndg->snd->wind[0] = sfc_spd_dir;
                 }
 
@@ -1664,6 +1665,8 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                 {
                     current_sndg->snd->theta_e[0] = sonde_equivalent_potential_temperature(sfc_t, sfc_dp, sfc_pres);
                 }
+
+                current_sndg->snd->hgt[0] = current_sndg->snd->stn_info.elevation;
             }
             
             /* Reinitialize these for the next iteration. */

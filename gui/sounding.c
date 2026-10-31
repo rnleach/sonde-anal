@@ -874,7 +874,7 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         {
             snprintf(str, sizeof(str), "  %.0lf%%", rh);
         }
-        else { str[0] = 0; }
+        else { str[0] = ' '; str[1] = '\0'; }
         TTF_Text *rh_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
         TTF_SetTextColorFloat(rh_txt, rh_color.r, rh_color.g, rh_color.b, rh_color.a);
         TTF_GetTextSize(rh_txt, &tw, &th);
@@ -885,7 +885,7 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         {
             snprintf(str, sizeof(str), "/%.0lf%%", rh_ice);
         }
-        else { str[0] = 0; }
+        else { str[0] = ' '; str[1] = '\0'; }
         TTF_Text *rh_ice_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
         TTF_SetTextColorFloat(rh_ice_txt, rh_ice_color.r, rh_ice_color.g, rh_ice_color.b, rh_ice_color.a);
         TTF_GetTextSize(rh_ice_txt, &tw, &th);
@@ -896,7 +896,7 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         {
             snprintf(str, sizeof(str), "  %.1lf Pa/s", pvv.val / 100.0);
         }
-        else { str[0] = 0; }
+        else { str[0] = ' '; str[1] = '\0'; }
         TTF_Text *pvv_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
         TTF_SetTextColorFloat(pvv_txt, black.r, black.g, black.b, black.a);
         TTF_GetTextSize(pvv_txt, &tw, &th);
@@ -923,7 +923,7 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         {
             snprintf(str, sizeof(str), "  %03.0lf %.0lf kts", wind.dir, wind.spd);
         }
-        else { str[0] = 0; }
+        else { str[0] = ' '; str[1] = '\0'; }
         TTF_Text *wind_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
         TTF_SetTextColorFloat(wind_txt, wind_color.r, wind_color.g, wind_color.b, wind_color.a);
         TTF_GetTextSize(wind_txt, &tw, &th);
