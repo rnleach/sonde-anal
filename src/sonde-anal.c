@@ -1472,18 +1472,19 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
         /* Parse the profiles */
         do
         {
-            /* Go up a level once we've parsed all the columns */
-            if(next_token_num % n_cols == 0)
-            {
-                idx = pak_array_ledger_push_back_index(levels);
-                if(idx == PAK_COLLECTION_FULL) { break; }
-            }
-
             /* Get the next token */
             inner_pair = internal_sonde_bufkit_next_token(remaining_text);
             ElkStr token = inner_pair.left;
             if(token.len == 0 || !token.start) { break; }
             remaining_text = inner_pair.right;
+
+            /* Go up a level once we've parsed all the columns - only after we're sure there's text to parse */
+            if(next_token_num % n_cols == 0)
+            {
+                if(idx != 0) { Assert(!SondeIsError(new_sndg->p[idx])); }
+                idx = pak_array_ledger_push_back_index(levels);
+                if(idx == PAK_COLLECTION_FULL) { break; }
+            }
 
             f64 tmp;
             success &= elk_str_fast_parse_f64(token, &tmp); Assert(success);

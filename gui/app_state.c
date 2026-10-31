@@ -13,7 +13,12 @@ typedef enum { SGT_HODO, SGT_PROFILES, SGT_GUSTS, SGT_FIRE, SGT_INDEXES, SGT_TEX
 /* An amalgamation of all things related to a particular sounding. */
 typedef struct
 {
+    /* The raw sounding data. */
     SondeSounding *sndg;
+
+    /* Data related to the raw text display. */
+    ElkStr text;
+    size text_n_lines;
 } SoundingAmalgam;
 
 typedef struct
@@ -44,6 +49,7 @@ typedef struct
 
     /* Right panel Tabs */
     GuiTab current_tab;
+    TextPanel text_area;
 
     /* Sampling Info */
     SampleInfo sample;
@@ -112,6 +118,6 @@ app_state_initialize(
 
     /* Right panel Tabs */
     app->current_tab = SGT_TEXT;
-
+    app->text_area = text_panel_create(w / 2, 0, w / 2, h);
 }
 

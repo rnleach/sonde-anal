@@ -56,6 +56,7 @@
 
 /* Embedded Font */
 #include "fonts/Roboto-Bold.h"
+#include "fonts/RobotoMono-Bold.h"
 
 /* ------------------------------------------------------ App State ------------------------------------------------------ */
 static AppState global_app_state = {0};
@@ -126,7 +127,7 @@ TTF_Font *
 load_embedded_ttf_font(f32 ptsize)
 {
     /* Wrap the static array in an SDL3 IOStream */
-    SDL_IOStream *stream = SDL_IOFromConstMem(Roboto_Bold_ttf, Roboto_Bold_ttf_len);
+    SDL_IOStream *stream = SDL_IOFromConstMem(RobotoMono_Bold_ttf, RobotoMono_Bold_ttf_len);
     StopIf(!stream, SDL_Log("Failed to create IOStream: %s", SDL_GetError()); return NULL);
 
     /* Load the font via the IOStream wrapper. */
@@ -526,6 +527,7 @@ SDL_AppIterate(void *appstate)
 
         /* Rescale the sounding area. */
         chart_panel_update_for_screen_resize(&app->skewt, 0, (i32)bar_h, w / 2, h - (i32)bar_h);
+        app->text_area = text_panel_create(w / 2, (i32)bar_h, w / 2, h - (i32)bar_h);
         /* TODO: Don't forget to update other panels here! */
         app->window_width = w;
         app->window_height = h;

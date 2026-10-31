@@ -317,7 +317,7 @@ sounding_initialize_static_data(AppState *app)
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
         char cbuf[32] = {0};
-        snprintf(cbuf, sizeof(cbuf), "%.0f hPa", isobars[i]);
+        snprintf(cbuf, sizeof(cbuf), "%.0fhPa", isobars[i]);
         isobar_labels[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
         TTF_SetTextColorFloat(isobar_labels[i], isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
     }
@@ -326,7 +326,7 @@ sounding_initialize_static_data(AppState *app)
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms); ++i)
     {
         char cbuf[32] = {0};
-        snprintf(cbuf, sizeof(cbuf), "%.0f °C", isotherms[i]);
+        snprintf(cbuf, sizeof(cbuf), "%.0f°C", isotherms[i]);
         isotherm_labels[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
         TTF_SetTextColorFloat(isotherm_labels[i], isotherm_color.r, isotherm_color.g, isotherm_color.b, isotherm_color.a);
     }

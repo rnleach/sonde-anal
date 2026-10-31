@@ -30,6 +30,13 @@ static inline void chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_poin
 static inline void chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to);
 static inline b32 chart_panel_point_inside(ChartPanel const *cp, SDL_FPoint const p);
 
+typedef struct
+{
+    SDL_Rect area;
+} TextPanel;
+
+static inline TextPanel text_panel_create(i32 ulx, i32 uly, i32 w, i32 h);
+
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 static inline void
 chart_panel_internal_manage_clipping(ChartPanel *cp)
@@ -204,5 +211,11 @@ chart_panel_point_inside(ChartPanel const *cp, SDL_FPoint const p)
 {
     SDL_Point ip = { .x = (i32)p.x, .y = (i32)p.y };
     return SDL_PointInRect(&ip, &cp->area);
+}
+
+static inline TextPanel 
+text_panel_create(i32 ulx, i32 uly, i32 w, i32 h)
+{
+    return (TextPanel){ .area = (SDL_Rect){ .x = ulx, .y = uly, .w = w, .h = h} };
 }
 

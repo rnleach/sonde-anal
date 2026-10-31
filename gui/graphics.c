@@ -85,23 +85,26 @@ quad_bezier(SDL_FPoint p0, SDL_FPoint p1, SDL_FPoint p2, f32 t)
 b32 
 DrawPointRound(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColor color) 
 {
+#define MAX_SEGMENTS 64
+#define MIN_SEGMENTS 8
+
     StopIf(!renderer || diameter <= 0.0f, return false);
 
     f32 radius = diameter * 0.5f;
 
     /* Dynamically scale circle smoothness with size (min 8, max 64 segments) */
     int segments = (int) diameter;
-    if(segments < 8)  { segments = 8;  }
-    if(segments > 64) { segments = 64; }
+    if(segments < MIN_SEGMENTS) { segments = MIN_SEGMENTS; }
+    if(segments > MAX_SEGMENTS) { segments = MAX_SEGMENTS; }
 
     /* Pre-allocate stacks for max segments (64 outer + 1 center vertex) */
-    SDL_Vertex vertices[65] = {0};
-    int indices[192] = {0};       /* 3 indices per triangle (segments * 3) */
+    SDL_Vertex vertices[MAX_SEGMENTS + 1] = {0};
+    i32 indices[MAX_SEGMENTS * 3] = {0};       /* 3 indices per triangle (segments * 3) */
 
     /* Center vertex */
     vertices[0].position = point;
     vertices[0].color = color;
-    /* vertices[0].tex_coord = (SDL_FPoint){ 0.0f, 0.0f }; */
+    /* vertices[0].tex_coord = {0}; */
 
     f32 angle_step = (2.0f * (f32)M_PI) / (f32)segments;
 
@@ -117,44 +120,50 @@ DrawPointRound(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColo
         };
 
         vertices[i + 1].color = color;
-        /* vertices[i + 1].tex_coord = (SDL_FPoint){ 0.0f, 0.0f }; */
+        /* vertices[i + 1].tex_coord = {0}; */
 
         /* Triangle connecting center (0) -> current (i + 1) -> next (i + 2 or 1) */
-        /* indices[i * 3]     = 0; */
+        /* indices[i * 3] = 0; */
         indices[i * 3 + 1] = i + 1;
         indices[i * 3 + 2] = (i + 1 == segments) ? 1 : i + 2;
     }
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, segments + 1, indices, segments * 3);
+
+#undef MIN_SEGMENTS
+#undef MAX_SEGMENTS
 }
 
 /* Draws a filled, anti-aliased round point (circle) with a specified diameter using SDL3 geometry. */
 b32 
 DrawPointRoundAA(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FColor color)
 {
+#define MAX_SEGMENTS 64
+#define MIN_SEGMENTS 8
+
     StopIf(!renderer || diameter <= 0.0f, return false);
 
     f32 radius = diameter * 0.5f;
 
     /* Dynamically scale circle smoothness with size (min 8, max 64 segments) */
     int segments = (int) diameter;
-    if(segments < 8)  { segments = 8;  }
-    if(segments > 64) { segments = 64; }
+    if(segments < MIN_SEGMENTS) { segments = MIN_SEGMENTS; }
+    if(segments > MAX_SEGMENTS) { segments = MAX_SEGMENTS; }
 
     /* 
      * Vertex & Index budgeting for AA:
      * - 1 Center vertex
      * - `segments` Inner core vertices (at radius - 0.5f)
      * - `segments` Outer AA ring vertices (at radius + 0.5f)
-     * Max segments = 64 -> 1 + 64 + 64 = 129 vertices.
+     * Max segments = MAX_SEGMENTS -> 1 + MAX_SEGMENTS + MAX_SEGMENTS = 129 vertices.
      * Max indices = (segments * 3 core triangles) + (segments * 6 border quad triangles) = segments * 9.
      */
     i32 total_vertices = 1 + (segments * 2);
     i32 total_indices = segments * 9;
 
-    SDL_Vertex vertices[129] = {0};
-    int indices[576] = {0};
+    SDL_Vertex vertices[MAX_SEGMENTS * 2 + 1] = {0};
+    int indices[MAX_SEGMENTS * 9] = {0};
 
     /* Define inner and outer AA boundaries */
     f32 r_inner = fmaxf(0.0f, radius - 0.5f);
@@ -226,6 +235,9 @@ DrawPointRoundAA(SDL_Renderer *renderer, SDL_FPoint point, f32 diameter, SDL_FCo
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     return SDL_RenderGeometry(renderer, NULL, vertices, total_vertices, indices, total_indices);
+
+#undef MIN_SEGMENTS
+#undef MAX_SEGMENTS
 }
 
 b32 
