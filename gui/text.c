@@ -29,7 +29,23 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %-5s", "Dew");
+    nw = snprintf(next, buf_remaining, " %-5s", " Dew");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-5s", " Dir");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-5s", " Spd");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-5s", "  U");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-5s", "  V");
     next += nw;
     buf_remaining -= nw;
 
@@ -39,15 +55,31 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     n_lines += 1;
 
     /* Header Row 2 - column labels*/
-    nw = snprintf(next, buf_remaining, "%-5s", "hPa");
+    nw = snprintf(next, buf_remaining, "%5s", "hPa ");
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %-5s", " °C ");
+    nw = snprintf(next, buf_remaining, " %5s", "C  ");
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %-5s", " °C ");
+    nw = snprintf(next, buf_remaining, " %5s", "C  ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "deg ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "kts ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "m/s ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "m/s ");
     next += nw;
     buf_remaining -= nw;
 
@@ -62,6 +94,8 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
         SondeHectopascal p = sndg->p[l];
         SondeCelsius t = sndg->t[l];
         SondeCelsius dp = sndg->dp[l];
+        SondeSpdDirKts wind = sndg->wind[l];
+        SondeUVMps uv_wind = sndg->uv_wind[l];
 
         size num_written = 0;
         char *line_start = next;
@@ -84,6 +118,32 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
         if(!SondeIsError(dp))
         {
             nw = snprintf(next, buf_remaining, " %5.1lf", dp.val);
+            next += nw;
+            num_written += nw;
+            buf_remaining -= nw;
+        }
+
+        if(!sonde_is_error(wind.spd))
+        {
+            nw = snprintf(next, buf_remaining, " %5.0lf", wind.dir);
+            next += nw;
+            num_written += nw;
+            buf_remaining -= nw;
+
+            nw = snprintf(next, buf_remaining, " %5.0lf", wind.spd);
+            next += nw;
+            num_written += nw;
+            buf_remaining -= nw;
+        }
+
+        if(!sonde_is_error(uv_wind.u))
+        {
+            nw = snprintf(next, buf_remaining, " %5.1lf", uv_wind.u);
+            next += nw;
+            num_written += nw;
+            buf_remaining -= nw;
+
+            nw = snprintf(next, buf_remaining, " %5.1lf", uv_wind.v);
             next += nw;
             num_written += nw;
             buf_remaining -= nw;
