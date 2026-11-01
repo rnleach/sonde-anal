@@ -57,14 +57,17 @@ typedef struct
     /* Useful UI state for things like panning */
     SDL_FPoint mouse_loc;
 
-    /* UI Element Options*/
+    /* UI Element Options - background */
     SDL_FColor background;
     b32 show_freezing_level;
     b32 show_hail_growth_zone;
     b32 show_dendritic_growth_zone;
-    b32 show_wet_bulb;
     b32 show_isohumes;
     b32 show_equivalent_pot_temp;
+
+    /* UI Element options - data */
+    b32 show_wet_bulb;
+    b32 show_clouds;
 
     /* Debug Window Information. */
     bool show_debug;
@@ -110,9 +113,12 @@ app_state_initialize(
     app->show_freezing_level = true;
     app->show_hail_growth_zone = true;
     app->show_dendritic_growth_zone = true;
-    app->show_wet_bulb = false;
     app->show_isohumes = false;
     app->show_equivalent_pot_temp = false;
+
+    /* UI Element options - data */
+    app->show_wet_bulb = false;
+    app->show_clouds = true;
 
     app->show_skew_t_context_menu = false;
 

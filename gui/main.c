@@ -632,6 +632,11 @@ SDL_AppIterate(void *appstate)
                     app->show_skew_t_context_menu = false; 
                 }
 
+                if(nk_checkbox_label(ctx, "Show Clouds", &app->show_clouds)) 
+                { 
+                    app->show_skew_t_context_menu = false; 
+                }
+
                 nk_menu_separator(app->ctx);
                 nk_layout_row_dynamic(app->ctx, 25, 1);
 

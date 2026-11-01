@@ -101,7 +101,7 @@ static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b
 static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const rh_color          = { .r = 0.3f,      .g = 0.6f,      .b = 0.02f,     .a = 0.75f };
 static SDL_FColor const rh_ice_color      = { .r = 0.0f,      .g = 0.6f,      .b = 0.6f,      .a = 1.00f };
-static SDL_FColor const cloud_color       = { .r = 0.5f,      .g = 0.5f,      .b = 0.5f,      .a = 1.00f };
+static SDL_FColor const cloud_color       = { .r = 0.5f,      .g = 0.5f,      .b = 0.5f,      .a = 0.70f };
 
 /* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
 static f32 const sample_bar_width = 2.0f;
@@ -588,12 +588,11 @@ sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
 static inline b32
 sounding_draw_clouds(AppState *app, MagAllocator alloc)
 {
-    /* TODO: Add option to not draw clouds. */
     ChartPanel *cp = &app->skewt;
 
     b32 success = true;
 
-    if(app->current_sndg >= 0)
+    if(app->current_sndg >= 0 && app->show_clouds)
     {
         SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
