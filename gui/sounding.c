@@ -665,13 +665,15 @@ sounding_draw_legend(AppState *app, MagAllocator alloc_)
 
     if(app->current_sndg >= 0)
     {
+        ChartPanel *cp = &app->skewt;
+
         f32 const padding = 6.0f;
         f32 const border_width = 3.0f;
 
         SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
         SondeStationInfo *stn = &snd->stn_info;
 
-        SDL_FPoint legend_ul = { .x = 10.0f, .y = 70.0f };
+        SDL_FPoint legend_ul = { .x = cp->clipping.x + 10.0f, .y = cp->clipping.y + 20.0f };
         SDL_FPoint legend_lr = { .x = legend_ul.x + padding, .y = legend_ul.y + padding };
         i32 tw, th;
 
@@ -1129,8 +1131,8 @@ sounding_draw(AppState *app)
     success &= sounding_draw_background_lines(app, alloc_);               Assert(success);
     success &= sounding_draw_wind(app, alloc_);                           Assert(success);
     success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_); Assert(success);
-    success &= sounding_draw_sample(app, alloc_);                         Assert(success);
     success &= sounding_draw_legend(app, alloc_);                         Assert(success);
+    success &= sounding_draw_sample(app, alloc_);                         Assert(success);
 
     /* Reset the clipping rect and return. */
     SDL_SetRenderClipRect(app->renderer, NULL);
