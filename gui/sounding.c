@@ -910,14 +910,14 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
     {
         SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
 
-        SDL_FPoint p1 = app->mouse_loc; p1.x = (f32)app->skewt.clipping.x;
-        SDL_FPoint p2 = app->mouse_loc; p2.x = (f32)(app->skewt.clipping.x + app->skewt.clipping.w);
+        SDL_FPoint p1 = app->mouse_loc; p1.x = (f32)cp->clipping.x;
+        SDL_FPoint p2 = app->mouse_loc; p2.x = (f32)(cp->clipping.x + cp->clipping.w);
         success &= DrawLineThickRoundedAA(app->renderer, p1, p2, sample_bar_width, sample_bar_color); Assert(success);
 
         f32 const padding = 4.0f;
         f32 const border_width = 3.0f;
 
-        SDL_FPoint sample_ul = { .x = 10.0f, .y = p1.y };
+        SDL_FPoint sample_ul = { .x = cp->clipping.x + 10.0f, .y = p1.y };
         SDL_FPoint sample_lr = { .x = sample_ul.x + padding, .y = sample_ul.y + padding };
         i32 tw, th;
 
@@ -1057,9 +1057,9 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
         border[3] = (SDL_FPoint){ .x = sample_lr.x, .y = sample_ul.y };
 
         /* Make adjustments for bottom of the screen */
-        if(border[2].y > (f32)(cp->clipping.y + cp->clipping.h))
+        f32 dy = (f32)(cp->clipping.h + cp->clipping.y) - border[2].y;
+        if(dy < 0.0f)
         {
-            f32 dy = (f32)cp->clipping.h - border[2].y;
 
             t_txt_start.y += dy;
             dp_txt_start.y += dy;
