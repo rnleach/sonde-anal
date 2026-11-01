@@ -100,7 +100,8 @@ static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b
 static SDL_FColor const dew_point_color   = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const rh_color          = { .r = 0.3f,      .g = 0.6f,      .b = 0.02f,     .a = 0.75f };
-static SDL_FColor const rh_ice_color      = { .r = 0.0f,      .g = 0.6f,      .b = 0.6f,      .a = 1.50f };
+static SDL_FColor const rh_ice_color      = { .r = 0.0f,      .g = 0.6f,      .b = 0.6f,      .a = 1.00f };
+static SDL_FColor const cloud_color       = { .r = 0.5f,      .g = 0.5f,      .b = 0.5f,      .a = 1.00f };
 
 /* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
 static f32 const sample_bar_width = 2.0f;
@@ -337,12 +338,9 @@ sounding_initialize_static_data(AppState *app)
 }
 
 static inline b32
-sounding_draw_background(AppState *app, MagAllocator alloc_)
+sounding_draw_background_fills(AppState *app, MagAllocator alloc_)
 {
-    ChartPanel *cp = &app->skewt;
     b32 success = true;
-
-    f32 w = (f32)cp->chart_w;
 
     /* Draw the filled bands in the background. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotherms) - 1; ++i)
@@ -361,7 +359,8 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
 
             SDL_FPoint vs[4] = { pair1.p1, pair1.p2, pair2.p2, pair2.p1 };
 
-            DrawPolygonThick(app->renderer, vs, ECO_ARRAY_SIZE(vs), 0.0f, isotherm_band_color, isotherm_band_color, alloc_);
+            success &= DrawPolygonThick(app->renderer, vs, ECO_ARRAY_SIZE(vs), 0.0f, isotherm_band_color, isotherm_band_color, alloc_);
+            Assert(success);
         }
     }
 
@@ -392,6 +391,17 @@ sounding_draw_background(AppState *app, MagAllocator alloc_)
                 alloc_);
         Assert(success);
     }
+
+    return success;
+}
+
+static inline b32
+sounding_draw_background_lines(AppState *app, MagAllocator alloc_)
+{
+    ChartPanel *cp = &app->skewt;
+    b32 success = true;
+
+    f32 w = (f32)cp->chart_w;
 
     /* Draw the isohumes */
     if(app->show_isohumes)
@@ -569,6 +579,79 @@ sounding_draw_temperature_dew_point_wet_bulb(AppState *app, MagAllocator alloc_)
         if(!pak_array_ledger_empty(&wb_ledger))
         {
             success &= DrawPolylineThickAA(app->renderer, wb_pnts, pak_len(&wb_ledger), wet_bulb_width, wet_bulb_color, alloc_); Assert(success);
+        }
+    }
+
+    return success;
+}
+
+static inline b32
+sounding_draw_clouds(AppState *app, MagAllocator alloc)
+{
+    /* TODO: Add option to not draw clouds. */
+    ChartPanel *cp = &app->skewt;
+
+    b32 success = true;
+
+    if(app->current_sndg >= 0)
+    {
+        SondeSounding *snd = app->sndg_amalgams[app->current_sndg].sndg;
+
+        if(!snd->cloud_fraction) { return success; }
+
+        /* This is a bit of a hack to get a nice gradient. */
+        f32 const center_x = (f32)(app->skewt.area.x + app->skewt.area.w / 2);
+        f32 const center_xm = (f32)(app->skewt.area.x - app->skewt.area.w / 2);
+        f32 const center_xp = (f32)(app->skewt.area.x + app->skewt.area.w * 3 / 2);
+        f32 const center_x0 = (f32)(app->skewt.area.x);
+        f32 const center_x1 = (f32)(app->skewt.area.x + app->skewt.area.w);
+
+        for(size l = 0; l < pak_len(&snd->levels) - 1; ++l)
+        {
+            SondeHectopascal p0 = snd->p[l + 0];
+            SondeHectopascal p1 = snd->p[l + 1];
+            SDL_FPoint pnt0 = pressure_hpa_temperature_c_to_chart_coords(p0, (SondeCelsius){ .val = 0.0 }, cp);
+            pnt0 = chart_panel_apply_pan_and_zoom(pnt0, cp);
+            pnt0 = chart_panel_convert_to_screen_coords(pnt0, cp);
+            SDL_FPoint pnt1 = pressure_hpa_temperature_c_to_chart_coords(p1, (SondeCelsius){ .val = 0.0 }, cp);
+            pnt1 = chart_panel_apply_pan_and_zoom(pnt1, cp);
+            pnt1 = chart_panel_convert_to_screen_coords(pnt1, cp);
+
+            f32 cf0 = snd->cloud_fraction[l + 0] / 100.0f;
+            f32 cf1 = snd->cloud_fraction[l + 1] / 100.0f;
+
+            if(!isnan(p0.val) && !isnan(cf0) && !isnan(p1.val) && !isnan(cf1))
+            {
+                SDL_FColor bottom_color = cloud_color;
+                SDL_FColor top_color = cloud_color;
+                bottom_color.a *= cf0;
+                top_color.a *= cf1;
+
+                SDL_Vertex tri[3] = {0};
+                tri[0].position = (SDL_FPoint){ .x = center_x0, .y = pnt0.y };
+                tri[0].color = bottom_color;
+                tri[1].position = (SDL_FPoint){ .x = center_x,  .y = pnt1.y };
+                tri[1].color = top_color;
+                tri[2].position = (SDL_FPoint){ .x = center_x1, .y = pnt0.y };
+                tri[2].color = bottom_color;
+                success &= SDL_RenderGeometry(app->renderer, NULL, tri, 3, NULL, 0);
+
+                tri[0].position = (SDL_FPoint){ .x = center_xm, .y = pnt1.y };
+                tri[0].color = top_color;
+                tri[1].position = (SDL_FPoint){ .x = center_x0,  .y = pnt0.y };
+                tri[1].color = bottom_color;
+                tri[2].position = (SDL_FPoint){ .x = center_x, .y = pnt1.y };
+                tri[2].color = top_color;
+                success &= SDL_RenderGeometry(app->renderer, NULL, tri, 3, NULL, 0);
+
+                tri[0].position = (SDL_FPoint){ .x = center_x, .y = pnt1.y };
+                tri[0].color = top_color;
+                tri[1].position = (SDL_FPoint){ .x = center_x1,  .y = pnt0.y };
+                tri[1].color = bottom_color;
+                tri[2].position = (SDL_FPoint){ .x = center_xp, .y = pnt1.y };
+                tri[2].color = top_color;
+                success &= SDL_RenderGeometry(app->renderer, NULL, tri, 3, NULL, 0);
+            }
         }
     }
 
@@ -1042,7 +1125,9 @@ sounding_draw(AppState *app)
     /* Set up clipping area. */
     SDL_SetRenderClipRect(app->renderer, &cp->clipping);
 
-    success &= sounding_draw_background(app, alloc_);                     Assert(success);
+    success &= sounding_draw_background_fills(app, alloc_);               Assert(success);
+    success &= sounding_draw_clouds(app, alloc_);                         Assert(success);
+    success &= sounding_draw_background_lines(app, alloc_);               Assert(success);
     success &= sounding_draw_wind(app, alloc_);                           Assert(success);
     success &= sounding_draw_temperature_dew_point_wet_bulb(app, alloc_); Assert(success);
     success &= sounding_draw_sample(app, alloc_);                         Assert(success);
