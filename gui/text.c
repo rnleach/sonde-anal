@@ -25,11 +25,27 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     next += nw;
     buf_remaining -= nw;
 
+    nw = snprintf(next, buf_remaining, " %-6s", "Height");
+    next += nw;
+    buf_remaining -= nw;
+
     nw = snprintf(next, buf_remaining, " %-5s", "Temp");
     next += nw;
     buf_remaining -= nw;
 
+    nw = snprintf(next, buf_remaining, " %-5s", " WB ");
+    next += nw;
+    buf_remaining -= nw;
+
     nw = snprintf(next, buf_remaining, " %-5s", " Dew");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-5s", "theta");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-7s", "theta-e");
     next += nw;
     buf_remaining -= nw;
 
@@ -41,11 +57,15 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %-5s", "  U");
+    nw = snprintf(next, buf_remaining, " %-5s", " PVV");
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %-5s", "  V");
+    nw = snprintf(next, buf_remaining, " %-5s", "Cloud");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %-9s", "RH/RH Ice");
     next += nw;
     buf_remaining -= nw;
 
@@ -59,11 +79,27 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     next += nw;
     buf_remaining -= nw;
 
+    nw = snprintf(next, buf_remaining, " %6s", "meters");
+    next += nw;
+    buf_remaining -= nw;
+
     nw = snprintf(next, buf_remaining, " %5s", "C  ");
     next += nw;
     buf_remaining -= nw;
 
     nw = snprintf(next, buf_remaining, " %5s", "C  ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "C  ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %5s", "K  ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %7s", "K  ");
     next += nw;
     buf_remaining -= nw;
 
@@ -75,11 +111,15 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %5s", "m/s ");
+    nw = snprintf(next, buf_remaining, " %5s", " Pa/S");
     next += nw;
     buf_remaining -= nw;
 
-    nw = snprintf(next, buf_remaining, " %5s", "m/s ");
+    nw = snprintf(next, buf_remaining, " %5s", "  % ");
+    next += nw;
+    buf_remaining -= nw;
+
+    nw = snprintf(next, buf_remaining, " %9s", " % / % ");
     next += nw;
     buf_remaining -= nw;
 
@@ -92,10 +132,17 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
     for(i32 l = max_idx; l >= 0; --l)
     {
         SondeHectopascal p = sndg->p[l];
+        SondeMeter hgt = sndg->hgt[l];
         SondeCelsius t = sndg->t[l];
+        SondeCelsius wb = sndg->wb[l];
         SondeCelsius dp = sndg->dp[l];
+        SondeKelvin theta = sndg->theta[l];
+        SondeKelvin theta_e = sndg->theta_e[l];
         SondeSpdDirKts wind = sndg->wind[l];
-        SondeUVMps uv_wind = sndg->uv_wind[l];
+        SondeHectopascalPerSecond pvv = sndg->pvv[l];
+        f32 cf = sndg->cloud_fraction[l];
+        f32 rh = sndg->rh[l] * 100.0f;
+        f32 rh_ice = sndg->rh_ice[l] * 100.0f;
 
         size num_written = 0;
         char *line_start = next;
@@ -107,21 +154,41 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
         num_written += nw;
         buf_remaining -= nw;
 
-        if(!SondeIsError(t))
-        {
-            nw = snprintf(next, buf_remaining, " %5.1lf", t.val);
-            next += nw;
-            num_written += nw;
-            buf_remaining -= nw;
-        }
+        if(!SondeIsError(hgt))      { nw = snprintf(next, buf_remaining, " %6.0lf", hgt.val);          }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
 
-        if(!SondeIsError(dp))
-        {
-            nw = snprintf(next, buf_remaining, " %5.1lf", dp.val);
-            next += nw;
-            num_written += nw;
-            buf_remaining -= nw;
-        }
+        if(!SondeIsError(t))        { nw = snprintf(next, buf_remaining, " %5.1lf", t.val);            }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!SondeIsError(wb))       { nw = snprintf(next, buf_remaining, " %5.1lf", wb.val);           }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!SondeIsError(dp))       { nw = snprintf(next, buf_remaining, " %5.1lf", dp.val);           }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!SondeIsError(theta))    { nw = snprintf(next, buf_remaining, " %5.0lf", theta.val);        }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!SondeIsError(theta_e))  { nw = snprintf(next, buf_remaining, " %7.0lf", theta_e.val);      }
+        else                        { nw = snprintf(next, buf_remaining, " %7s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
 
         if(!sonde_is_error(wind.spd))
         {
@@ -135,19 +202,42 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
             num_written += nw;
             buf_remaining -= nw;
         }
-
-        if(!sonde_is_error(uv_wind.u))
+        else
         {
-            nw = snprintf(next, buf_remaining, " %5.1lf", uv_wind.u);
+            nw = snprintf(next, buf_remaining, " %5s", " ");
             next += nw;
             num_written += nw;
             buf_remaining -= nw;
 
-            nw = snprintf(next, buf_remaining, " %5.1lf", uv_wind.v);
+            nw = snprintf(next, buf_remaining, " %5s", " ");
             next += nw;
             num_written += nw;
             buf_remaining -= nw;
         }
+
+        if(!SondeIsError(pvv))      { nw = snprintf(next, buf_remaining, " %5.1lf", pvv.val / 100.0f); }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!sonde_is_error(cf))     { nw = snprintf(next, buf_remaining, " %5.0lf", cf);               }
+        else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!sonde_is_error(rh))     { nw = snprintf(next, buf_remaining, " %3.0lf", rh);               }
+        else                        { nw = snprintf(next, buf_remaining, " %3s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
+
+        if(!sonde_is_error(rh_ice)) { nw = snprintf(next, buf_remaining, "/%3.0lf", rh_ice);           }
+        else                        { nw = snprintf(next, buf_remaining, " %3s", " ");                 }
+        next += nw;
+        num_written += nw;
+        buf_remaining -= nw;
 
         if(buf_remaining <= 0) /* We ran out of space for this line, allocate more memory */
         {
