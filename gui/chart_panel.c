@@ -36,6 +36,7 @@ typedef struct
 } TextPanel;
 
 static inline TextPanel text_panel_create(i32 ulx, i32 uly, i32 w, i32 h);
+static inline void text_panel_update_for_screen_resize(TextPanel *tp, i32 ulx, i32 uly, i32 w, i32 h);
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
 static inline void
@@ -217,5 +218,11 @@ static inline TextPanel
 text_panel_create(i32 ulx, i32 uly, i32 w, i32 h)
 {
     return (TextPanel){ .area = (SDL_Rect){ .x = ulx, .y = uly, .w = w, .h = h} };
+}
+
+static inline void 
+text_panel_update_for_screen_resize(TextPanel *tp, i32 ulx, i32 uly, i32 w, i32 h)
+{
+    *tp = text_panel_create(ulx, uly, w, h);
 }
 

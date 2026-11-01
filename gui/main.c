@@ -527,7 +527,7 @@ SDL_AppIterate(void *appstate)
 
         /* Rescale the sounding area. */
         chart_panel_update_for_screen_resize(&app->skewt, 0, (i32)bar_h, w / 2, h - (i32)bar_h);
-        app->text_area = text_panel_create(w / 2, (i32)bar_h, w / 2, h - (i32)bar_h);
+        text_panel_update_for_screen_resize(&app->text_area, w / 2, (i32)bar_h, w / 2, h - (i32)bar_h);
         /* TODO: Don't forget to update other panels here! */
         app->window_width = w;
         app->window_height = h;
