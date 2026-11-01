@@ -276,7 +276,8 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
 #undef TEXT_BUF_INITIAL_CAPACITY
 }
 
-b32 text_draw(AppState *app)
+static inline b32 
+text_draw(AppState *app)
 {
     b32 success = true;
     if(app->n_soundings > 0)
@@ -356,7 +357,10 @@ b32 text_draw(AppState *app)
         if(app->sample.type == SAMPLE_TYPE_SKEWT)
         {
             /* Adjust to make sure highlighted row is always visible */
-            f32 y_adjust_candidate = (highlight_row_y1.y - app->text_area.area.y) - (f32)app->text_area.area.h * 0.5f;
+            f32 weight = highlight_row_color1.a;
+            f32 weighted_y = highlight_row_y1.y * weight + highlight_row_y0.y * (1.0f - weight);
+            f32 y_adjust_candidate = (weighted_y - app->text_area.area.y) - (f32)app->text_area.area.h * 0.5f;
+
             if(y_adjust_candidate < y_adjust) { y_adjust = y_adjust_candidate; }
             if(y_adjust < 0.0f) { y_adjust = 0.0f; }
 
