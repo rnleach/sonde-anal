@@ -298,6 +298,7 @@ SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* Initialize the drawing areas. */
     sounding_initialize_static_data(app);
+    profiles_initialize_static_data(app);
 
     /* Start receiving events - required by the SDL3 backend. */
     nk_input_begin(app->ctx);

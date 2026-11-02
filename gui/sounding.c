@@ -41,7 +41,7 @@ typedef struct
 
 /* Isobars configuration */
 static f32 const isobars[] = {1000.0f, 925.0f, 850.0f, 700.0f, 500.0f, 300.0f, 200.0f, 100.0f, }; /* hPa */
-static SDL_FPoint isobars_sdl[ECO_ARRAY_SIZE(isobars)] = {0};
+static SDL_FPoint_Pair isobars_sdl[ECO_ARRAY_SIZE(isobars)] = {0};
 static TTF_Text *isobar_labels[ECO_ARRAY_SIZE(isobars)] = {0};
 
 /* Isotherms configuration */
@@ -150,11 +150,14 @@ sounding_update_static_data(ChartPanel *cp)
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
         f32 chart_y = pressure_hpa_to_chart_y((SondeHectopascal) { .val = isobars[i]}, cp);
-        SDL_FPoint chart_coords = { .x = 0.0f, .y = chart_y };
-        chart_coords = chart_panel_apply_pan_and_zoom(chart_coords, cp);
-        SDL_FPoint screen_coords = chart_panel_convert_to_screen_coords(chart_coords, cp);
+        SDL_FPoint chart_coords0 = { .x = 0.0f, .y = chart_y };
+        SDL_FPoint chart_coords1 = { .x = 1.0f, .y = chart_y };
+        chart_coords0 = chart_panel_apply_pan_and_zoom(chart_coords0, cp);
+        chart_coords1 = chart_panel_apply_pan_and_zoom(chart_coords1, cp);
+        SDL_FPoint screen_coords0 = chart_panel_convert_to_screen_coords(chart_coords0, cp);
+        SDL_FPoint screen_coords1 = chart_panel_convert_to_screen_coords(chart_coords1, cp);
 
-        isobars_sdl[i] = screen_coords;
+        isobars_sdl[i] = (SDL_FPoint_Pair){ .p1 = screen_coords0, .p2 = screen_coords1 };
     }
 
 
@@ -400,10 +403,7 @@ sounding_draw_background_fills(AppState *app, MagAllocator alloc_)
 static inline b32
 sounding_draw_background_lines(AppState *app, MagAllocator alloc_)
 {
-    ChartPanel *cp = &app->skewt;
     b32 success = true;
-
-    f32 w = (f32)cp->chart_w;
 
     /* Draw the isohumes */
     if(app->show_isohumes)
@@ -449,8 +449,8 @@ sounding_draw_background_lines(AppState *app, MagAllocator alloc_)
     /* Draw the isobars. */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
-        SDL_FPoint p1 = {.x = cp->x_offset,     .y = isobars_sdl[i].y };
-        SDL_FPoint p2 = {.x = w + cp->x_offset, .y = isobars_sdl[i].y };
+        SDL_FPoint p1 = isobars_sdl[i].p1;
+        SDL_FPoint p2 = isobars_sdl[i].p2;
         success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isobar_width, isobar_color); Assert(success);
     }
 
@@ -470,7 +470,8 @@ sounding_draw_background_lines(AppState *app, MagAllocator alloc_)
     f32 const padding = 3.0f;
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isobars); ++i)
     {
-        SDL_FPoint p1 = {.x = cp->x_offset, .y = isobars_sdl[i].y };
+        SDL_FPoint p1 = isobars_sdl[i].p1;
+        p1.x = p1.x < 0.0f ? 0.0f : p1.x;
 
         i32 tw, th;
         TTF_GetTextSize(isobar_labels[i], &tw, &th);
