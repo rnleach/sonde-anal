@@ -94,6 +94,7 @@ static f32 const wind_barb_dot_width    =  7.0f;
 static f32 const wind_barb_shaft_width  =  1.0f;
 static f32 const wind_barb_shaft_length = 35.0f;
 static f32 const wind_barb_barb_length  = 15.0f;
+static f32 const pvv_width              =  2.0f;
 
 static SDL_FColor const temperature_color = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 static SDL_FColor const wet_bulb_color    = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
@@ -102,6 +103,7 @@ static SDL_FColor const wind_color        = { .r = 0.0f,      .g = 0.0f,      .b
 static SDL_FColor const rh_color          = { .r = 0.3f,      .g = 0.6f,      .b = 0.02f,     .a = 0.75f };
 static SDL_FColor const rh_ice_color      = { .r = 0.0f,      .g = 0.6f,      .b = 0.6f,      .a = 1.00f };
 static SDL_FColor const cloud_color       = { .r = 0.5f,      .g = 0.5f,      .b = 0.5f,      .a = 0.70f };
+static SDL_FColor const pvv_color         = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
 
 /* ------------------------------------------------ Sample Configuration ------------------------------------------------- */
 static f32 const sample_bar_width = 2.0f;
@@ -978,7 +980,7 @@ sounding_draw_sample(AppState *app, MagAllocator alloc_)
 
         if(!isnan(pvv.val))
         {
-            snprintf(str, sizeof(str), "  %.1lf Pa/s", pvv.val / 100.0);
+            snprintf(str, sizeof(str), "  %.1lf Pa/s", pvv.val * 100.0);
         }
         else { str[0] = ' '; str[1] = '\0'; }
         TTF_Text *pvv_txt = TTF_CreateText(app->text_engine, app->small_font, str, 0);
@@ -1168,8 +1170,6 @@ sounding_sample(AppState *app, SDL_FPoint loc)
     else { app->sample.type = SAMPLE_TYPE_NONE; }
 }
 
-#undef P_MAX
-#undef P_MIN
 #undef T_MAX
 #undef T_MIN
 #undef DP

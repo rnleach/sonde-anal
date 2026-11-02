@@ -1,4 +1,4 @@
-/* This file includes the code for building aa zoomable, panable chart.                                                    */
+/* This file includes the code for building a zoomable, panable chart.                                                    */
 
 /* --------------------------------------------------------- API --------------------------------------------------------- */
 typedef struct
@@ -29,6 +29,28 @@ static inline SDL_FPoint chart_panel_convert_from_screen_coords(SDL_FPoint p, Ch
 static inline void chart_panel_handle_zoom(ChartPanel *cp, SDL_FPoint focus_point, f32 zoom_factor);
 static inline void chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to);
 static inline b32 chart_panel_point_inside(ChartPanel const *cp, SDL_FPoint const p);
+
+/* A chart panel that only scales and zooms in the vertical. */
+typedef struct
+{
+    /* Screen area properties. */
+    SDL_Rect area;          /* x & y are upper left corner, w & h are width and height, all i32                      */
+    SDL_Rect clipping;      /* This is the actual drawing area based on keeping the chart at the proper aspect ratio */
+
+    /* Master chart, should align vertically with this chart always. */
+    ChartPanel *master;
+
+    b32 needs_background_update; /* If the zoom, pan, or window size change, this needs updated. */
+
+} VChartPanel;
+
+static inline VChartPanel vchart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, ChartPanel *master);
+static inline void vchart_panel_update_for_screen_resize(VChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h);
+static inline SDL_FPoint vchart_panel_apply_pan_and_zoom(SDL_FPoint p, VChartPanel *cp);
+static inline SDL_FPoint vchart_panel_unapply_pan_and_zoom(SDL_FPoint p, VChartPanel *cp);
+static inline SDL_FPoint vchart_panel_convert_to_screen_coords(SDL_FPoint p, VChartPanel *cp);
+static inline SDL_FPoint vchart_panel_convert_from_screen_coords(SDL_FPoint p, VChartPanel *cp);
+static inline b32 vchart_panel_point_inside(VChartPanel const *cp, SDL_FPoint const p);
 
 typedef struct
 {
@@ -209,6 +231,76 @@ chart_panel_pan(ChartPanel *cp, SDL_FPoint from, SDL_FPoint to)
 
 static inline b32 
 chart_panel_point_inside(ChartPanel const *cp, SDL_FPoint const p)
+{
+    SDL_Point ip = { .x = (i32)p.x, .y = (i32)p.y };
+    return SDL_PointInRect(&ip, &cp->area);
+}
+
+static inline VChartPanel 
+vchart_panel_create(i32 ulx, i32 uly, i32 w, i32 h, ChartPanel *master)
+{
+
+    VChartPanel cp = {0};
+
+    cp.area.x = ulx; cp.area.y = uly; cp.area.w = w; cp.area.h = h;
+    cp.needs_background_update = true;
+    cp.master = master;
+
+    return cp;
+}
+
+static inline void 
+vchart_panel_update_for_screen_resize(VChartPanel *cp, i32 ulx, i32 uly, i32 w, i32 h)
+{
+    cp->area.x = ulx; cp->area.y = uly; cp->area.w = w; cp->area.h = h;
+    cp->needs_background_update = true;
+    return;
+}
+
+static inline SDL_FPoint 
+vchart_panel_apply_pan_and_zoom(SDL_FPoint p, VChartPanel *cp)
+{
+    /* pan */
+    p.y += cp->master->pan.y;
+
+    /* zoom */
+    p.y = (p.y - 0.5f) * cp->master->zf + 0.5f;
+
+    return p;
+}
+
+static inline SDL_FPoint 
+vchart_panel_unapply_pan_and_zoom(SDL_FPoint p, VChartPanel *cp)
+{
+    /* unzoom */
+    p.y = (p.y - 0.5f) / cp->master->zf + 0.5f;
+
+    /* pan */
+    p.y -= cp->master->pan.y;
+
+    return p;
+}
+
+static inline SDL_FPoint 
+vchart_panel_convert_to_screen_coords(SDL_FPoint p, VChartPanel *cp)
+{
+    p.x = p.x * cp->area.w + cp->area.x;
+    p.y = p.y * cp->master->chart_h + cp->master->y_offset;
+
+    return p;
+}
+
+static inline SDL_FPoint 
+vchart_panel_convert_from_screen_coords(SDL_FPoint p, VChartPanel *cp)
+{
+    p.x = (p.x - cp->area.x) / cp->area.w;
+    p.y = (p.y - cp->master->y_offset) /cp->master->chart_h;
+
+    return p;
+}
+
+static inline b32 
+vchart_panel_point_inside(VChartPanel const *cp, SDL_FPoint const p)
 {
     SDL_Point ip = { .x = (i32)p.x, .y = (i32)p.y };
     return SDL_PointInRect(&ip, &cp->area);

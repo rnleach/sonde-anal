@@ -215,7 +215,7 @@ build_sounding_text(SoundingAmalgam *amalgam, MagAllocator *data)
             buf_remaining -= nw;
         }
 
-        if(!SondeIsError(pvv))      { nw = snprintf(next, buf_remaining, " %5.1lf", pvv.val / 100.0f); }
+        if(!SondeIsError(pvv))      { nw = snprintf(next, buf_remaining, " %5.1lf", pvv.val * 100.0f); }
         else                        { nw = snprintf(next, buf_remaining, " %5s", " ");                 }
         next += nw;
         num_written += nw;

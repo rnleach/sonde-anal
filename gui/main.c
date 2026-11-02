@@ -411,6 +411,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
                     SDL_FPoint locf = app->mouse_loc;
                     if(chart_panel_point_inside(&app->skewt, locf)) { sounding_sample(app, locf); }
+                    /* TODO: Update for other sampling. */
                 }
 
                 if(event->key.key == SDLK_LEFT)
@@ -419,6 +420,7 @@ SDL_AppEvent(void *appstate, SDL_Event *event)
 
                     SDL_FPoint locf = app->mouse_loc;
                     if(chart_panel_point_inside(&app->skewt, locf)) { sounding_sample(app, locf); }
+                    /* TODO: Update for other sampling. */
                 }
 
             } break;
@@ -513,6 +515,7 @@ SDL_AppIterate(void *appstate)
 
     f32 const bar_w = logical_w * 0.5;
     f32 const bar_h = 60.0f;
+    i32 const bar_ih = (i32)roundf(bar_h);
 
     /* ======================================================================================================================
      *                                                Draw The Skew-T etc.
@@ -526,8 +529,9 @@ SDL_AppIterate(void *appstate)
         app->scratch_layer = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
 
         /* Rescale the sounding area. */
-        chart_panel_update_for_screen_resize(&app->skewt, 0, (i32)bar_h, w / 2, h - (i32)bar_h);
-        text_panel_update_for_screen_resize(&app->text_area, w / 2, (i32)bar_h, w / 2, h - (i32)bar_h);
+        chart_panel_update_for_screen_resize(&app->skewt, 0, bar_ih, w / 2, h - bar_ih);
+        vchart_panel_update_for_screen_resize(&app->rh_profile, w / 2, bar_ih, w / 6, h - bar_ih);
+        text_panel_update_for_screen_resize(&app->text_area, w / 2, bar_ih, w / 2, h - bar_ih);
         /* TODO: Don't forget to update other panels here! */
         app->window_width = w;
         app->window_height = h;

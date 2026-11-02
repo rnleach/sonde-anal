@@ -42,14 +42,15 @@ typedef struct
     i32 n_soundings;
     i32 current_sndg;
 
-    /* Charts and drawing areas */
+    /* Skew-T drawing area */
     ChartPanel skewt;
     SDL_Point context_menu_location;
     b32 show_skew_t_context_menu;
 
-    /* Right panel Tabs */
+    /* Right panel tabs */
     GuiTab current_tab;
     TextPanel text_area;
+    VChartPanel rh_profile;
 
     /* Sampling Info */
     SampleInfo sample;
@@ -123,7 +124,8 @@ app_state_initialize(
     app->show_skew_t_context_menu = false;
 
     /* Right panel Tabs */
-    app->current_tab = SGT_TEXT;
+    app->current_tab = SGT_PROFILES;
     app->text_area = text_panel_create(w / 2, 0, w / 2, h);
+    app->rh_profile = vchart_panel_create(w /2, 0, w / 6, h, &app->skewt);
 }
 

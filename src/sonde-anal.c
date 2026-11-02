@@ -1499,7 +1499,7 @@ sonde_sounding_from_bufkit_str(MagAllocator *alloc, ElkStr txt, ElkStr source_de
                 case SBPC_THETA_E: { new_sndg->theta_e[idx]        = (SondeKelvin)              { .val = tmp };         } break;
                 case SBPC_DRCT:    { new_sndg->wind[idx].dir       =                                     tmp;           } break;
                 case SBPC_SPD:     { new_sndg->wind[idx].spd       =                                     tmp;           } break;
-                case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp * 100.0 }; } break;
+                case SBPC_PVV:     { new_sndg->pvv[idx]            = (SondeHectopascalPerSecond){ .val = tmp / 100.0 }; } break;
                 case SBPC_CLD:     { new_sndg->cloud_fraction[idx] =                                     tmp;           } break;
                 case SBPC_HGT:     { new_sndg->hgt[idx]            = (SondeMeter)               { .val = tmp };         } break;
                 default: { /* ignore unknown values */ }                                                                  break;
