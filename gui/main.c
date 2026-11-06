@@ -532,6 +532,7 @@ SDL_AppIterate(void *appstate)
         /* Rescale the sounding area. */
         chart_panel_update_for_screen_resize(&app->skewt, 0, bar_ih, w / 2, h - bar_ih);
         vchart_panel_update_for_screen_resize(&app->rh_profile, w / 2, bar_ih, w / 6, h - bar_ih);
+        vchart_panel_update_for_screen_resize(&app->wind_profile, 2 * w / 3, bar_ih, w / 6, h - bar_ih);
         text_panel_update_for_screen_resize(&app->text_area, w / 2, bar_ih, w / 2, h - bar_ih);
         /* TODO: Don't forget to update other panels here! */
         app->window_width = w;

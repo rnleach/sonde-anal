@@ -94,6 +94,7 @@ static f32 const wind_barb_dot_width    =  7.0f;
 static f32 const wind_barb_shaft_width  =  1.0f;
 static f32 const wind_barb_shaft_length = 35.0f;
 static f32 const wind_barb_barb_length  = 15.0f;
+static f32 const wind_spd_width         =  2.0f;
 static f32 const pvv_width              =  2.0f;
 
 static SDL_FColor const temperature_color = { .r = 0.0f,      .g = 0.0f,      .b = 0.0f,      .a = 1.00f };
