@@ -338,8 +338,8 @@ typedef struct
     SondeCelsius dp;
 } SondeParcel;
 
-static inline SondeLevels *sonde_freezing_levels(SondeSounding *snd, MagAllocator *perm);
-static inline SondeLevels *sonde_wet_bulb_zero_levels(SondeSounding *snd, MagAllocator *perm);
+static inline SondeLevels *sonde_freezing_levels(SondeSounding *snd, SondeHectopascal pmin, MagAllocator *perm); /* Only search up to min pressure */
+static inline SondeLevels *sonde_wet_bulb_zero_levels(SondeSounding *snd, SondeHectopascal pmin, MagAllocator *perm); /* Only search up to min pressure */
 static inline SondeLevels *sonde_max_temperature_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm); /* Only search up to min pressure */
 static inline SondeLevels *sonde_max_wetbulb_aloft(SondeSounding *snd, SondeHectopascal min_pressure, MagAllocator *perm);     /* Only search up to min pressure */
 static inline SondeLevels *sonde_height_level(SondeSounding *snd, SondeMeter height_asl, MagAllocator *perm);
@@ -530,24 +530,10 @@ sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
     f64 fa = f(a, params);
     f64 fb = f(b, params);
 
-#if 0
-    /* TODO: DELETE ME */
-    if(isnan(fa) || isnan(fb))
-    {
-        printf("a: %lf fa: %lf b: %lf fb: %lf Errors:[%s, %s]\n", a, fa, b, fb,
-                sonde_error_msg_from_value(fa), sonde_error_msg_from_value(fb)); 
-    }
-#endif
-
     if(isnan(fa)) { return fa; }
     if(isnan(fb)) { return fb; }
 
     /* Check to make sure a root is bracketed by a and b */
-#if 0
-    /* TODO: DELETE ME */
-    if(fa * fb >= 0.0) { printf("a: %lf fa: %lf b: %lf fb: %lf\n", a, fa, b, fb); }
-#endif
-
     if(fa * fb >= 0.0) { return sonde_error_create_nan(SONDE_ERROR_NO_BRACKET); }
 
     /* Check if the left and right brackets are in the correct order and fix them if not. */
@@ -598,11 +584,6 @@ sonde_find_root(SondeRootFunc f, f64 a, f64 b, f64 *params)
 
         f64 fs = f(s, params);
         
-#if 0
-        /* TODO: DELETE ME */
-        if(isnan(fs)) { printf("s: %lf fs: %lf a: %lf b: %lf Error:%s\n", s, fs, a, b, sonde_error_msg_from_value(fs)); }
-#endif
-
         if(isnan(fs)) { return fs; }
 
         d = c;
@@ -913,15 +894,6 @@ sonde_temperature_c_from_equiv_pot_temp_saturated_pressure_inner_root_(f64 t_c, 
     SondeKelvin theta_e = { .val = params[1] };
     SondeKelvin theta_e_calc = sonde_equivalent_potential_temperature(t, t, p);
 
-#if 0
-    /* TODO: DELETE ME */
-    if(isnan(theta_e_calc.val))
-    {
-        printf("p: %lf theta_e: %lf t: %lf theta_e_calc: %lf Error:%s\n",
-                p.val, theta_e.val, t.val, theta_e_calc.val, sonde_error_msg_from_value(theta_e_calc.val)); 
-    }
-#endif
-
     return theta_e_calc.val - theta_e.val;
 }
 
@@ -946,14 +918,6 @@ sonde_temperature_from_equiv_pot_temp_saturated_pressure(SondeHectopascal p, Son
             SONDE_MIN_T_VP_LIQUID_C,
             max_t,
             params);
-#if 0
-    /* TODO: DELETE */
-    if(isnan(t_c))
-    {
-        printf("p: %lf theta_e: %lf t_c: %lf Error:%s\n",
-                p.val, theta_e.val, t_c, sonde_error_msg_from_value(t_c)); 
-    }
-#endif
 
     return (SondeCelsius){ .val = t_c };
 }
@@ -1195,7 +1159,7 @@ typedef enum
     SBPC_UW,       /* U-wind component, meters per second                            */
     SBPC_VW,       /* V-wind component, meters per second                            */
 
-    // TODO: Add and parse more surface features including mslp and precip_1hr
+    /* TODO: Add and parse more surface features including mslp and precip_1hr */
 } InternalSondeBufkitProfileColumns;
 
 b32
@@ -2091,21 +2055,152 @@ sonde_sounding_sample_at_pressure(SondeSounding *snd, SondeHectopascal p)
     return sample;
 }
 #undef PRESSURE_LERP
+#undef PRESSURE_LERP_UOM
 
 static inline SondeLevels *
-sonde_freezing_levels(SondeSounding *snd, MagAllocator *perm)
+sonde_freezing_levels(SondeSounding *snd, SondeHectopascal pmin, MagAllocator *perm)
 {
-    /* TODO: implement */
-    Assert(false);
-    return NULL;
+    size n_levels = pak_len(&snd->levels);
+
+    SondeHectopascal *ps = snd->p;
+    SondeCelsius *ts = snd->t;
+    SondeCelsius *dps = snd->dp;
+    SondeMeter *hgts = snd->hgt;
+    SondeUVMps *uv_winds = snd->uv_wind;
+
+    size const max_fz_lvls = 5;
+    SondeLevels *fz_lvls = eco_arena_malloc(perm, SondeLevels);
+    fz_lvls = eco_arena_nrealloc(perm, fz_lvls, sizeof(SondeLevels) + max_fz_lvls * sizeof(SondeLevel), byte);
+    PakArrayLedger fz_lvls_ledger = pak_array_ledger_create(max_fz_lvls);
+
+    SondeHectopascal p0 = {0};
+    SondeHectopascal p1 = {0};
+    SondeCelsius t0 = {0};
+    SondeCelsius t1 = {0};
+    size l0 = 0; 
+    size l1 = 0;
+    size l = 0;
+    while(l < n_levels)
+    {
+        p1 = ps[l];
+        t1 = ts[l];
+        l1 = l;
+
+        if(!isnan(p1.val) && !isnan(t1.val))
+        {
+            f64 dp = p0.val - p1.val;
+            if(dp > 0.0)  /* Must be positive if moving from the bottom up. */
+            {
+                if((t1.val * t0.val < 0.0 || t1.val == 0.0) && !pak_array_ledger_full(&fz_lvls_ledger))
+                {
+                    /* Crossed (or touched) freezing */
+                    SondeCelsius dp0 = dps[l0];      SondeCelsius dp1 = dps[l1];
+                    SondeMeter h0    = hgts[l0];     SondeMeter h1    = hgts[l1];
+                    SondeUVMps w0    = uv_winds[l0]; SondeUVMps w1    = uv_winds[l1];
+
+                    SondeLevel lvl = {0};
+                    lvl.p = (SondeHectopascal){ .val = sonde_lerp(t0.val, p0.val, t1.val, p1.val, 0.0) };
+                    lvl.t = (SondeCelsius){ .val = 0.0 };
+                    lvl.dp = (SondeCelsius){ .val = sonde_lerp(t0.val, dp0.val, t1.val, dp1.val, 0.0) };
+                    lvl.hgt = (SondeMeter){ .val = sonde_lerp(t0.val, h0.val, t1.val, h1.val, 0.0) };
+                    lvl.uv_wind = (SondeUVMps)
+                        { .u = sonde_lerp(t0.val, w0.u, t1.val, w1.u, 0.0),
+                          .v = sonde_lerp(t0.val, w0.v, t1.val, w1.v, 0.0),
+                        };
+
+                    size idx = pak_array_ledger_push_back_index(&fz_lvls_ledger);
+                    fz_lvls->data[idx] = lvl;
+                }
+            }
+
+            p0 = p1;
+            t0 = t1;
+            l0 = l1;
+
+            if(p0.val < pmin.val) { break; }
+        }
+
+        l += 1;
+    }
+
+    fz_lvls = (SondeLevels*)eco_arena_nrealloc(perm, fz_lvls, sizeof(SondeLevels) + pak_len(&fz_lvls_ledger) * sizeof(SondeLevel), byte);
+    fz_lvls->n_levels = pak_len(&fz_lvls_ledger);
+
+    return fz_lvls;
 }
 
 static inline SondeLevels *
-sonde_wet_bulb_zero_levels(SondeSounding *snd, MagAllocator *perm)
+sonde_wet_bulb_zero_levels(SondeSounding *snd, SondeHectopascal pmin, MagAllocator *perm)
 {
-    /* TODO: implement */
-    Assert(false);
-    return NULL;
+    size n_levels = pak_len(&snd->levels);
+
+    SondeHectopascal *ps = snd->p;
+    SondeCelsius *wbs = snd->wb;
+    SondeCelsius *ts = snd->t;
+    SondeCelsius *dps = snd->dp;
+    SondeMeter *hgts = snd->hgt;
+    SondeUVMps *uv_winds = snd->uv_wind;
+
+    size const max_fz_lvls = 5;
+    SondeLevels *wbz_lvls = eco_arena_malloc(perm, SondeLevels);
+    wbz_lvls = eco_arena_nrealloc(perm, wbz_lvls, sizeof(SondeLevels) + max_fz_lvls * sizeof(SondeLevel), byte);
+    PakArrayLedger wbz_lvls_ledger = pak_array_ledger_create(max_fz_lvls);
+
+    SondeHectopascal p0 = {0};
+    SondeHectopascal p1 = {0};
+    SondeCelsius wb0 = {0};
+    SondeCelsius wb1 = {0};
+    size l0 = 0; 
+    size l1 = 0;
+    size l = 0;
+    while(l < n_levels)
+    {
+        p1 = ps[l];
+        wb1 = wbs[l];
+        l1 = l;
+
+        if(!isnan(p1.val) && !isnan(wb1.val))
+        {
+            f64 dp = p0.val - p1.val;
+            if(dp > 0.0)  /* Must be positive if moving from the bottom up. */
+            {
+                if((wb1.val * wb0.val < 0.0 || wb1.val == 0.0) && !pak_array_ledger_full(&wbz_lvls_ledger))
+                {
+                    /* Crossed (or touched) freezing */
+                    SondeCelsius t0  = ts[l0];       SondeCelsius t1  = ts[l1];
+                    SondeCelsius dp0 = dps[l0];      SondeCelsius dp1 = dps[l1];
+                    SondeMeter h0    = hgts[l0];     SondeMeter h1    = hgts[l1];
+                    SondeUVMps w0    = uv_winds[l0]; SondeUVMps w1    = uv_winds[l1];
+
+                    SondeLevel lvl = {0};
+                    lvl.p = (SondeHectopascal){ .val = sonde_lerp(wb0.val, p0.val, wb1.val, p1.val, 0.0) };
+                    lvl.t = (SondeCelsius){ .val = sonde_lerp(wb0.val, t0.val, wb1.val, t1.val, 0.0) };
+                    lvl.dp = (SondeCelsius){ .val = sonde_lerp(wb0.val, dp0.val, wb1.val, dp1.val, 0.0) };
+                    lvl.hgt = (SondeMeter){ .val = sonde_lerp(wb0.val, h0.val, wb1.val, h1.val, 0.0) };
+                    lvl.uv_wind = (SondeUVMps)
+                        { .u = sonde_lerp(wb0.val, w0.u, wb1.val, w1.u, 0.0),
+                          .v = sonde_lerp(wb0.val, w0.v, wb1.val, w1.v, 0.0),
+                        };
+
+                    size idx = pak_array_ledger_push_back_index(&wbz_lvls_ledger);
+                    wbz_lvls->data[idx] = lvl;
+                }
+            }
+
+            p0 = p1;
+            wb0 = wb1;
+            l0 = l1;
+
+            if(p0.val < pmin.val) { break; }
+        }
+
+        l += 1;
+    }
+
+    wbz_lvls = (SondeLevels*)eco_arena_nrealloc(perm, wbz_lvls, sizeof(SondeLevels) + pak_len(&wbz_lvls_ledger) * sizeof(SondeLevel), byte);
+    wbz_lvls->n_levels = pak_len(&wbz_lvls_ledger);
+
+    return wbz_lvls;
 }
 
 static inline SondeLevels *
