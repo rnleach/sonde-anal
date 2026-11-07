@@ -11,7 +11,7 @@ static f32 const iso_rh[] = { 0.0f, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.
 static TTF_Text *iso_rh_lables[ECO_ARRAY_SIZE(iso_rh)] = {0};
 
 /* isotachs */
-static f32 const isotachs[] = { 2.0, 5.0f, 10.0f, 20.0f, 50.0f, 100.0f, 200.0f };
+static f32 const isotachs[] = { 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 20.0f, 40.0f, 60.0f, 80.0f, 100.0f, 200.0f };
 static TTF_Text *isotach_lables[ECO_ARRAY_SIZE(isotachs)] = {0};
 
 /* --------------------------------------------------- Implementations --------------------------------------------------- */
@@ -27,16 +27,16 @@ profiles_initialize_static_data(AppState *app)
         char cbuf[32] = {0};
         snprintf(cbuf, sizeof(cbuf), "%.0f%%", iso_rh[i] * 100.0f);
         iso_rh_lables[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
-        TTF_SetTextColorFloat(iso_rh_lables[i], rh_color.r, rh_color.g, rh_color.b, rh_color.a);
+        TTF_SetTextColorFloat(iso_rh_lables[i], isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
     }
 
     /* Set up isotach labels */
     for(i32 i = 0; i < ECO_ARRAY_SIZE(isotachs); ++i)
     {
         char cbuf[32] = {0};
-        snprintf(cbuf, sizeof(cbuf), "%.0fkt", isotachs[i]);
+        snprintf(cbuf, sizeof(cbuf), "%.0f", isotachs[i]);
         isotach_lables[i] = TTF_CreateText(app->text_engine, app->small_font, cbuf, 0);
-        TTF_SetTextColorFloat(isotach_lables[i], wind_color.r, wind_color.g, wind_color.b, wind_color.a);
+        TTF_SetTextColorFloat(isotach_lables[i], isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
     }
 
     return success;
@@ -131,8 +131,7 @@ profiles_draw_rh_pvv_background(AppState *app)
         SDL_FRect trect = { .x = pnt.x, .y = pnt.y - padding, .w = (f32)(tw) + 2.0f * padding, .h = (f32)(th) + 2.0f * padding };
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect);
-        SDL_SetRenderDrawColorFloat(app->renderer, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
-        TTF_DrawRendererText(iso_rh_lables[i], pnt.x + padding, pnt.y);
+        TTF_DrawRendererText(iso_rh_lables[i], pnt.x + padding, pnt.y + padding);
     }
 
     return success;
@@ -270,10 +269,26 @@ profiles_draw_rh_pvv_legend(AppState *app)
     SDL_FPoint legend_lr = { .x = legend_ul.x + padding, .y = legend_ul.y + padding };
     i32 tw, th;
 
-    TTF_Text *legend_txt = TTF_CreateText(app->text_engine, app->large_font, "RH and PVV", 0);
-    TTF_SetTextColorFloat(legend_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
-    TTF_GetTextSize(legend_txt, &tw, &th);
-    SDL_FPoint legend_txt_start = legend_lr;
+    TTF_Text *rh_water_txt = TTF_CreateText(app->text_engine, app->large_font, "RH Water (%)", 0);
+    TTF_SetTextColorFloat(rh_water_txt, rh_color.r, rh_color.g, rh_color.b, rh_color.a);
+    TTF_GetTextSize(rh_water_txt, &tw, &th);
+    SDL_FPoint rh_txt_start = legend_lr;
+    legend_lr.y += (f32)th;
+    legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
+
+    TTF_Text *rh_ice_txt = TTF_CreateText(app->text_engine, app->large_font, "RH Ice (%)", 0);
+    TTF_SetTextColorFloat(rh_ice_txt, rh_ice_color.r, rh_ice_color.g, rh_ice_color.b, rh_ice_color.a);
+    TTF_GetTextSize(rh_ice_txt, &tw, &th);
+    SDL_FPoint rh_ice_txt_start = legend_lr;
+    rh_ice_txt_start.x = legend_ul.x + padding;
+    legend_lr.y += (f32)th;
+    legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
+
+    TTF_Text *pvv_txt = TTF_CreateText(app->text_engine, app->large_font, "PVV (Pa/s)", 0);
+    TTF_SetTextColorFloat(pvv_txt, pvv_color.r, pvv_color.g, pvv_color.b, pvv_color.a);
+    TTF_GetTextSize(pvv_txt, &tw, &th);
+    SDL_FPoint pvv_txt_start = legend_lr;
+    pvv_txt_start.x = legend_ul.x + padding;
     legend_lr.y += (f32)th;
     legend_lr.x = legend_ul.x + 2.0f * padding + (f32)tw < legend_lr.x ? legend_lr.x : legend_ul.x + 2.0f * padding +(f32)tw;
 
@@ -287,8 +302,13 @@ profiles_draw_rh_pvv_legend(AppState *app)
 
     success &= DrawPolygonThick(app->renderer, border, 4, border_width, isobar_color, app->background, alloc_);
 
-    TTF_DrawRendererText(legend_txt, legend_txt_start.x, legend_txt_start.y);
-    TTF_DestroyText(legend_txt);
+    TTF_DrawRendererText(rh_water_txt, rh_txt_start.x, rh_txt_start.y);
+    TTF_DrawRendererText(rh_ice_txt, rh_ice_txt_start.x, rh_ice_txt_start.y);
+    TTF_DrawRendererText(pvv_txt, pvv_txt_start.x, pvv_txt_start.y);
+
+    TTF_DestroyText(pvv_txt);
+    TTF_DestroyText(rh_ice_txt);
+    TTF_DestroyText(rh_water_txt);
 
     return success;
 }
@@ -372,13 +392,14 @@ profiles_draw_wind_background(AppState *app)
     for(i32 l = 0; l < ECO_ARRAY_SIZE(isobars); ++l)
     {
         SDL_FPoint p1 = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = isobars[l] }, (SondeSpdDirKts){ .dir = 0.0f });
+        p1.x = 0.0f;
         p1 = vchart_panel_apply_pan_and_zoom(p1, cp);
         p1 = vchart_panel_convert_to_screen_coords(p1, cp);
-        p1.x = 0.0f;
+
         SDL_FPoint p2 = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = isobars[l] }, (SondeSpdDirKts){ .dir = 1.0f });
+        p2.x = 1.0f;
         p2 = vchart_panel_apply_pan_and_zoom(p2, cp);
         p2 = vchart_panel_convert_to_screen_coords(p2, cp);
-        p2.x = 0.0f;
 
         success &= DrawLineThickRoundedAA(app->renderer, p1, p2, isobar_width, isobar_color); Assert(success);
     }
@@ -388,6 +409,7 @@ profiles_draw_wind_background(AppState *app)
         SDL_FPoint p1 = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = P_MIN }, (SondeSpdDirKts){ .dir = 0.0, .spd = isotachs[i] });
         p1 = vchart_panel_apply_pan_and_zoom(p1, cp);
         p1 = vchart_panel_convert_to_screen_coords(p1, cp);
+
         SDL_FPoint p2 = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = P_MAX }, (SondeSpdDirKts){ .dir = 0.0, .spd = isotachs[i] });
         p2 = vchart_panel_apply_pan_and_zoom(p2, cp);
         p2 = vchart_panel_convert_to_screen_coords(p2, cp);
@@ -397,9 +419,14 @@ profiles_draw_wind_background(AppState *app)
     
     /* Label the isotachs */
     f32 const padding = 3.0f;
-    for(i32 i = 1; i < ECO_ARRAY_SIZE(isotachs); i += 2)
+    for(i32 i = 0; i < ECO_ARRAY_SIZE(isotachs); i += 1)
     {
-        SDL_FPoint pnt = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = P_MAX }, (SondeSpdDirKts){ .dir = 0.0, .spd = isotachs[i] });
+        f32 isotach = isotachs[i];
+
+        /* Skip troublesome values for labels */
+        if(isotach == 8.0f || isotach == 80.0f) { continue; }
+
+        SDL_FPoint pnt = wind_profile_pressure_kt_to_chart_coords((SondeHectopascal){ .val = P_MAX }, (SondeSpdDirKts){ .dir = 0.0, .spd = isotach });
         pnt = vchart_panel_apply_pan_and_zoom(pnt, cp);
         pnt = vchart_panel_convert_to_screen_coords(pnt, cp);
         pnt.y = pnt.y > cp->area.y + cp->area.h ? cp->area.y + cp->area.h : pnt.y;
@@ -411,8 +438,7 @@ profiles_draw_wind_background(AppState *app)
         SDL_FRect trect = { .x = pnt.x, .y = pnt.y - padding, .w = (f32)(tw) + 2.0f * padding, .h = (f32)(th) + 2.0f * padding };
         SDL_SetRenderDrawColorFloat(app->renderer, app->background.r, app->background.g, app->background.b, app->background.a);
         SDL_RenderFillRect(app->renderer, &trect);
-        SDL_SetRenderDrawColorFloat(app->renderer, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
-        TTF_DrawRendererText(isotach_lables[i], pnt.x + padding, pnt.y);
+        TTF_DrawRendererText(isotach_lables[i], pnt.x + padding, pnt.y + padding);
     }
 
     return success;
@@ -498,7 +524,7 @@ profiles_draw_wind_legend(AppState *app)
     i32 tw, th;
 
     TTF_Text *legend_txt = TTF_CreateText(app->text_engine, app->large_font, "Wind Spd (kt)", 0);
-    TTF_SetTextColorFloat(legend_txt, isobar_color.r, isobar_color.g, isobar_color.b, isobar_color.a);
+    TTF_SetTextColorFloat(legend_txt, wind_color.r, wind_color.g, wind_color.b, wind_color.a);
     TTF_GetTextSize(legend_txt, &tw, &th);
     SDL_FPoint legend_txt_start = legend_lr;
     legend_lr.y += (f32)th;

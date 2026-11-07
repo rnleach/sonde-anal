@@ -127,7 +127,7 @@ app_state_initialize(
     /* Right panel Tabs */
     app->current_tab = SGT_PROFILES;
     app->text_area = text_panel_create(w / 2, 0, w / 2, h);
-    app->rh_profile = vchart_panel_create(w / 2, 0, w / 6, h, &app->skewt);
-    app->wind_profile = vchart_panel_create(2 * w / 3, 0, w / 6, h, &app->skewt);
+    app->rh_profile = vchart_panel_create(w / 2, 0, w / 4, h, &app->skewt);
+    app->wind_profile = vchart_panel_create(3 * w / 4, 0, w / 4, h, &app->skewt);
 }
 
