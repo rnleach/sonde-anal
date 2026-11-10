@@ -32,7 +32,6 @@ AssertApproxEq(f64 left, f64 right, f64 abs_eps, f64 prop_eps)
 #include "unit_conversion_tests.c"
 #include "thermodynamic_functions_test.c"
 #include "bufkit_test.c"
-#include "levels_tests.c"
 
 /*---------------------------------------------------------------------------------------------------------------------------
  *                                                    Test Runner 
@@ -45,7 +44,6 @@ main(int argc, char *argv[])
     all_unit_conversion_tests();
     all_thermodynamic_functions_tests();
     all_bufkit_tests();
-    all_level_tests();
 
     printf("\n\t\tFinished sonde-anal tests.\n\n");
 }
